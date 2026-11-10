@@ -80,6 +80,9 @@ def configure_logging(level: int = logging.INFO) -> None:
     handler._pintae = True  # type: ignore[attr-defined]
     root.addHandler(handler)
     root.setLevel(level)
+    # Third-party loggers write free text (URLs, SQL parameters): keep them quiet.
+    for name in ("httpx", "httpcore", "sqlalchemy", "uvicorn.access", "multipart"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 def log_event(logger: logging.Logger, event: str, level: int = logging.INFO, **fields: Any) -> None:
