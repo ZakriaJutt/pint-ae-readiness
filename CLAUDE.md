@@ -1,6 +1,6 @@
 # CLAUDE.md — PINT AE Readiness Desk
 
-Read [AGENTS.md](AGENTS.md) first; it is canonical. This file adds only what is specific to this product. No code exists; commands are proposed.
+Read [AGENTS.md](AGENTS.md) first; it is canonical. This file adds only what is specific to this product. B1 code exists (see the AGENTS.md header and AGENTS.md section 7 for the commands that run).
 
 ## The buyer's workflow
 

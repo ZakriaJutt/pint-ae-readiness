@@ -1,6 +1,6 @@
 # AGENTS.md — PINT AE Readiness Desk
 
-Canonical instructions for any agent or developer working in this repository. No application code exists yet. **Every command in this file is proposed** and will not run until an implementation is added.
+Canonical instructions for any agent or developer working in this repository. Build milestone B1 (foundation and deterministic core, started 2026-11-11 on the owner's authorisation before the Phase 0 gate) exists on branch `feat/b1-foundation`: Python packages, migrations, a minimal API and worker, and tests. There is no web frontend, no sign-in flow and no real provider integration. Commands marked **exists** in section 7 run; all others remain proposed.
 
 ## 1. Reading order
 
@@ -46,6 +46,32 @@ Label every number as [C], [S: SRC-nn], [A] or [P] (Decision.md section 0). An a
 - Vendor staff are not firm users; they reach tenant rows only through an Owner's grant.
 - Long work is a job: return 202, poll, idempotency key on every mutating request.
 
+### 4.1 Utilities index (B1; reuse these, do not copy them)
+
+| Concern | The one implementation |
+|---|---|
+| Settings (read once, validated; `PUBLIC_BASE_URL` rule) | `packages/core/pintae_core/config.py` |
+| Structured logging, correlation identifier, field allow-list | `packages/core/pintae_core/logging.py` |
+| Asia/Dubai date helper | `packages/rules/pintae_rules/dates.py` |
+| Tenancy session (the only way to open a database session) | `packages/core/pintae_core/tenancy.py` |
+| ORM models, tenant and global table lists, expected migration head | `packages/core/pintae_core/models.py` |
+| Storage-key builder and object-store interface (local fake) | `packages/core/pintae_core/storage.py` |
+| Jobs: enqueue, claim, lease sweep, compare-and-set completion, heartbeat | `packages/core/pintae_core/jobs.py` |
+| Audit events | `packages/core/pintae_core/audit.py` |
+| Idempotency keys | `packages/core/pintae_core/idempotency.py` |
+| Runs, snapshots, status read, report pins and currency | `packages/core/pintae_core/readiness.py` |
+| Rule-pack and calendar publication (two steps) | `packages/core/pintae_core/publication.py` |
+| Rule engine and evaluators | `packages/rules/pintae_rules/engine.py` |
+| Rule-pack loading, hashing, selection by effective date | `packages/rules/pintae_rules/packs.py` |
+| Segment function | `packages/rules/pintae_rules/segment.py` |
+| Calendar lookup and deadline view | `packages/rules/pintae_rules/calendar.py` |
+| Status function and staleness derivation | `packages/rules/pintae_rules/status.py` |
+| Dashboard risk sort | `packages/rules/pintae_rules/dashboard.py` |
+| Rule-pack golden-fixture runner | `packages/rules/pintae_rules/fixtures.py` |
+| File checks and parsers (.xlsx, .csv) | `packages/ingest/pintae_ingest/parsers.py` |
+| Column mapper, synonym dictionary, header fingerprint | `packages/ingest/pintae_ingest/mapper.py` |
+| RP-1, CAL-1, CAL-2 data and RP-1 fixtures | `packages/rulepacks/pintae_rulepacks/` |
+
 ## 5. Tenant safety
 
 - Every tenant table has `firm_id` and a row-level security policy. Open database sessions only through the tenancy session, in the API and in the worker.
@@ -57,7 +83,7 @@ Label every number as [C], [S: SRC-nn], [A] or [P] (Decision.md section 0). An a
 ## 6. Migrations
 
 - One linear history; a second head fails CI.
-- Models and migrations must produce the same schema (`scripts/check_schema_parity`, proposed).
+- Models and migrations must produce the same schema (`scripts/check_schema_parity.py`, exists; `make parity`).
 - Add columns nullable, backfill with a resumable job, then constrain. Build indexes on large tables concurrently.
 - Never run a backfill inside a schema migration.
 
@@ -66,7 +92,8 @@ Label every number as [C], [S: SRC-nn], [A] or [P] (Decision.md section 0). An a
 - A change to a rule, the calendar, the segment function or the status function needs a unit test with a synthetic fixture and an expected outcome first.
 - A new endpoint is added to the tenant and permission suite (IT-01, IT-02) in the same change.
 - Fixtures are synthetic (FX-A to FX-E). Never commit customer data, credentials, tokens or real TRNs.
-- Proposed commands: `make dev`, `make test`, `make e2e`, `scripts/check_schema_parity`, `scripts/load_rulepack <file>`.
+- Commands. **Exists** (B1, run from the repository root): `make venv`, `make dev` (database, migrations, reference data, worker, API on port 8105, waits for `/readyz`), `make dev-check` (OPS-04), `make test` (rebuilds the `pintae_test` schema, then unit and integration tests), `make lint` (ruff), `make typecheck` (mypy strict), `make arch` (ARCH-01, `scripts/check_imports.py`), `make parity` (`scripts/check_schema_parity.py`), `python scripts/load_rulepack.py <file> --publisher-email <e> [--confirm-hash <hex>]`. **Still proposed**: `make e2e`, `scripts/run_checks_cli`, `scripts/seed_synthetic`, `scripts/restore_drill`, `scripts/sweep_expired`.
+- Local environment: Python 3.12 virtual environment at `backend/.venv`; PostgreSQL `pintae_dev` and `pintae_test` used through the role `pintae_app` (NOSUPERUSER NOBYPASSRLS); the owner role only for migrations and publication. Redis database index 4 is assigned but unused (TRD AD-02). Docker is not used locally; the Compose setup in TRD section 7 stays proposed.
 
 ## 8. When something changes, update these
 

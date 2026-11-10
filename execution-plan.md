@@ -111,7 +111,7 @@ flowchart LR
 |---|---|---|---|---|---|---|
 | T-3.2.1 | MH-06 | D | 24–36 | Rule engine and RP-1; command-line runner for the founder | UT-01 to UT-09, UT-12, UT-14 | Decimal arithmetic; applicability; fingerprints; out-of-scope handling |
 | T-3.2.2 | MH-02, MH-03 | D | 8–12 | Segment function and calendar lookup | UT-10, UT-13, UT-16 | Pure functions; Asia/Dubai dates; SEG-U handling |
-| T-3.2.3 | MH-08 | D | 8–12 | Status function, snapshots and the `entity_status` view that derives staleness on read | UT-11, UT-17, IT-17 | One function in `packages/rules`; snapshot write in the run transaction; view; no stored stale flag |
+| T-3.2.3 | MH-08 | D | 8–12 | Status function, snapshots and the `entity_status` derivation of staleness on read (a read function, not a SQL view, since B1) | UT-11, UT-17, IT-17 | One function in `packages/rules`; snapshot write in the run transaction; read-time derivation; no stored stale flag |
 | T-3.2.4 | MH-12 | D | 8–12 | Publication with its two steps, `notify_stale` notices, approval pin guard | IT-07, IT-12, IT-13, IT-17 | Publish routes; `publications` row; notices; 409 on stale pins |
 
 **M3.3 Work surfaces.** Entry: M3.1 and M3.2 exits. Owner: D. Outcome: the Preparer and Reviewer can work unaided. Exit: E2E-01, E2E-03, E2E-05, E2E-08 pass.
@@ -218,7 +218,7 @@ Fixtures in section 9. None has been run.
 | UT-11 | Status table: failed blocker; no failed blocker but buyer-TRN field marked "not in this file" (RC-07 not checked on every customer); no blocker with one accepted exception; clean but mapping not approved; clean, approved mapping, awaiting review; approved; approved then pack changed; segment unknown with zero findings; seller address unknown; clean file containing two self-billed invoices (code 389), before and after a Reviewer confirms them | Gaps open; **Checks incomplete, never Data-ready, score 0% for customers**; Exceptions open; Review pending and approval refused; Review pending; Data-ready; Stale; Segment not confirmed; Checks incomplete; Checks incomplete while unresolved, then Review pending with "2 not assessed" carried to the report |
 | UT-12 | Same inputs and versions run twice | Identical result hash |
 | UT-13 | Days remaining to 31 March 2027 evaluated at 2027-03-31T21:00Z | "Passed" (it is 1 April in Dubai) |
-| UT-14 | Record with an accepted exception on RC-07 and an invalid emirate | RC-04 finding still produced |
+| UT-14 | Record with an accepted exception on RC-07 and an invalid emirate | RC-06 (buyer emirate) finding still produced; corrected in B1 from RC-04, which checks the seller profile, not a customer record |
 | UT-15 | Export a finding whose value is `=HYPERLINK("x")` | Cell is text, not a formula |
 | UT-16 | Calendar CAL-2, SEG-L | Date 30 October 2026 with the recorded guideline discrepancy |
 | UT-17 | Data-ready result whose newest data is 45 days old, then 46, with no job running | Data-ready; Stale |
