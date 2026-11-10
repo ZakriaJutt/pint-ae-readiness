@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import io
 import zipfile
-from decimal import Decimal
+from collections.abc import Sequence
+from decimal import ROUND_HALF_UP, Decimal
 
 import openpyxl
 
@@ -48,7 +49,7 @@ def xlsx_bytes(sheets: dict[str, list[list[object]]]) -> bytes:
     return buf.getvalue()
 
 
-def csv_bytes(rows: list[list[object]]) -> bytes:
+def csv_bytes(rows: Sequence[Sequence[object]]) -> bytes:
     import csv
 
     buf = io.StringIO()
@@ -95,7 +96,7 @@ def fx_a_invoices(count: int = 300) -> list[list[object]]:
         qty = Decimal(i % 7 + 1)
         price = Decimal("12.50")
         net = qty * price
-        tax = (net * Decimal("0.05")).quantize(Decimal("0.01"))
+        tax = (net * Decimal("0.05")).quantize(Decimal("0.01"), ROUND_HALF_UP)
         total = net + tax
         number = f"INV-{i:04d}"
         if i == 300:
