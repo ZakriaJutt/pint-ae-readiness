@@ -1,0 +1,187 @@
+# Verification, findings and fixes — PINT AE Readiness Desk
+
+Labels: [Decision.md section 0](Decision.md#0-labels). This file is the single home of the production risk register (R-01 to R-22) and of the findings register.
+
+## 1. Status summary
+
+| Item | State on 2026-11-10 |
+|---|---|
+| Application | Does not exist. Every application check is `Not run` |
+| Customer evidence | None. No interview, no message sent, no pilot |
+| Documents | Ten files written by Author A; independent review round 1 returned 19 findings; round 2 verdicts: 14 closed, 4 closed with a part open, 1 open by design, plus 2 new (F-020, F-021); the author fixed both and the F-001 residue on 2026-11-10; the reviewer's final retest on 2026-11-10 closed F-021 and the F-001 residue and closed F-020 with one leftover diagram date, which the lead then corrected (not re-reviewed) |
+| Highest-consequence failure | **False Ready** — a client entity is shown or reported as data-ready, or with a later deadline than the law gives it, when it is not ([PRD.md section 7](PRD.md#7-highest-cost-user-mistake-and-highest-consequence-failure)) |
+| Decisive question | Unanswered. The recurring job is defined as a proposal and has no evidence |
+
+## 2. Checks performed on the documents (author)
+
+| Check | Method | Result |
+|---|---|---|
+| Legal dates and segments | Read Ministerial Decisions 244 of 2025 and 66 of 2026 and the MoF Guidelines V2.0 in full text | Done; one conflict between instruments recorded (Decision §3) |
+| Mandatory field counts and rule references | Read MoF Mandatory Fields V1.1 and the PINT AE rule and release pages | Done; rule severities not shown at source |
+| What ASPs include | MoF Guidelines roles table and appendices; Wafeq and Zoho pages | Done; vendor text only |
+| Economics | Recomputed by script from the stated inputs | Done; brief's 86%, 3.23, 8 and 43 reproduce |
+| Stop-rule probability | Binomial computed by script | Done |
+| Internal links, IDs, traceability, risk rows | Script, section 6.1 | Done |
+| Security and accessibility references | ASVS 5.0.0 chapter text and WCAG 2.2 text read before citing | Done; two requirements marked not met |
+| Fresh-reader, source-fidelity, commercial recalculation, walkthrough | Reviewer's tasks | Not done by the author |
+
+## 3. Application checks planned for future implementation
+
+All `Not run`. Definitions: [execution-plan.md section 8](execution-plan.md#8-tests).
+
+| Group | IDs | Status |
+|---|---|---|
+| Unit | UT-01 to UT-19 | Not run |
+| Integration | IT-01 to IT-21 | Not run |
+| End-to-end | E2E-01 to E2E-08 | Not run |
+| Load | LOAD-01 to LOAD-03 | Not run |
+| Operations | OPS-01 to OPS-06 | Not run |
+| Accessibility | A11Y-01 to A11Y-07 | Not run |
+| Architecture, navigation, governance | ARCH-01, NAV-01, GOV-01, GOV-02 | Not run |
+
+## 4. Traceability matrix
+
+| Must-have | Screen or API | Design or architecture decision | Schema or permission | Task | Planned test |
+|---|---|---|---|---|---|
+| MH-01 Workspace, roles, isolation, recovery | S-01, S-02, S-03, S-15, S-17, S-18; `/auth/*`, `/invites`, `/users`, `/firm`, `/vendor/*` | AD-01, AD-05, AD-12 | `firms`, `users`, `sessions`, `invites`, `recovery_codes`, `password_resets`, `owner_resets`, `vendor_users`, `support_grants`; row-level security; role matrix | T-2.2.2, T-2.2.3, T-5.1.1 | IT-01, IT-02, IT-16, IT-18, IT-21, E2E-07 |
+| MH-02 Segment classification | S-05, S-06; `/segment-assessments` | DD-03, AD-04 | `segment_assessments` (versions, `unknown` band, first-invoice state; decider role by trigger) | T-3.2.2, T-3.3.2 | UT-10, IT-13, E2E-05 |
+| MH-03 Versioned deadlines and provisions | S-04, S-06, S-14; `/calendar-versions`, `/provisions` | DD-03, AD-07, AD-11 | `calendar_versions`, `calendar_rules` (basis, candidates, discrepancy), `provisions`, `rules.valid_from`/`valid_to` | T-0.1.3, T-1.1.2, T-3.2.2, T-4.1.4 | UT-10, UT-13, UT-16, UT-18, E2E-08 |
+| MH-04 Upload | S-07; `/uploads` | AD-03 | `uploads` unique hash; storage key scheme | T-3.1.1, T-3.1.3, T-2.2.6 | IT-03, IT-06, IT-08, IT-15 |
+| MH-05 Mapping with confirmation and approval | S-08, S-12; `/uploads/{id}/mapping`, `/mappings/{id}/decision`, `/value-mappings` | DD-07, AD-06 | `column_mappings` (approved state), `value_mappings`; Reviewer or Owner approves | T-3.1.2, T-3.1.3 | UT-03, UT-08, UT-11, IT-02, E2E-01 |
+| MH-06 Deterministic checks | S-09; `/runs` | AD-04, AD-07, AD-10 | `check_runs` (pins, input hash), `findings` (outcome, not-checked reason), `rules` | T-1.1.1, T-3.2.1 | UT-01 to UT-09, UT-12, UT-14 |
+| MH-07 Fix list with evidence | S-10; `/findings` | DD-04 | `findings` (upload, sheet, row, column), `staged_rows` | T-3.3.3, T-4.1.2 | E2E-01, E2E-03, UT-15 |
+| MH-08 Status never overstates | S-04, S-05, S-12 | DD-02, DD-06, AD-10, AD-11 | `readiness_snapshots` (`unchecked_blockers`, check constraint on Data-ready), `finding_exceptions`, view `entity_status` | T-1.1.5, T-3.2.3 | UT-11, UT-14, UT-17, IT-17, E2E-02 |
+| MH-09 Cross-client dashboard | S-04; `/dashboard`, `/runs/batch`, `/dashboard/exports` | DD-01 | Indexes on snapshots and ASP status; `entity_status` | T-3.3.1 | E2E-03, E2E-08, LOAD-02 |
+| MH-10 ASP status and overlap | S-11, S-10, S-04; `/asp-status`, `PATCH /findings/{id}` | DD-03 | `asp_statuses`, `findings.asp_also_flagged` | T-3.3.4, T-3.3.3, T-3.3.1, T-0.3.3 | E2E-08 (overdue-first listing), metric M-03 |
+| MH-11 Approved report | S-12; `/reports`, `/reports/lookup`, `/reports/{id}/delivered` | DD-05, DD-08, AD-04, AD-11 | `reports` (pins, reference code, immutability trigger); approve is Reviewer or Owner; `system_flags` | T-4.1.1, T-6.1.5 | IT-07, IT-17, E2E-04, OPS-06 |
+| MH-12 Rule and calendar updates | S-14, S-04 banner; `/vendor/rule-packs/{code}/publish`, `/vendor/calendar-versions/{code}/publish` | AD-04, AD-07, AD-11 | `rule_packs`, `calendar_versions` (hash, status), `publications`; staleness derived, not stored | T-3.2.4, T-0.1.7, T-6.2.3 | IT-07, IT-12, IT-17, IT-21, E2E-02 |
+| MH-13 Monthly cycle | S-13; `/cycles`, `/rejections` | DD-01 | `cycles`, `rejections` | T-4.2.1, T-4.2.2 | E2E-06 |
+| MH-14 Audit, export, deletion | S-16; `/audit-events`, `/exports`, `DELETE /entities/{id}`, `/support-grants`, `/deletion-requests` | TRD §8.6 | `audit_events` insert-only, `deletion_requests`, `support_grants` | T-2.2.4, T-4.1.3 | IT-10, IT-14, IT-20, IT-21 |
+| MH-15 Handoff pack | S-12; `/handoff-packs` | AD-09 | `files` purpose `handoff` | T-4.1.2 | UT-15, IT-19, E2E-01 |
+
+Paid-pilot promise followed end to end: Decision §5.2 → MH-04 to MH-11 → S-07 to S-12 → role matrix → `uploads` to `reports` → T-0.3.2 by hand, T-3.1.1 to T-4.1.1 in the application → E2E-01. Failure scenario followed: PRD §7 False Ready → PRD §5 (unchecked blocker, derived staleness) → TRD §6.2 → S-08 approval, S-12 approval check → snapshot check constraint, pins, `entity_status` → T-3.2.3, T-3.2.4, T-6.1.5 → UT-11, IT-07, IT-17, E2E-02, OPS-06; before the application exists → T-0.1.7 and T-0.3.4.
+
+## 5. Production risk register
+
+All 22 apply; none is marked not applicable. Tests are defined in execution-plan.md section 8 and are `Not run`.
+
+| ID | Risk | Impact for this buyer and data | Prevention | Detection signal | Test and expected outcome | Task |
+|---|---|---|---|---|---|---|
+| R-01 | Out-of-order or duplicate events overwrite a newer job state | A late "succeeded" from an old check run replaces a newer run's result, so a client that now fails shows its old Data-ready status | Compare-and-set on `state_version`; results written only by the current `attempt_id`; one current snapshot per entity | Count of discarded stale completions; snapshot whose run is not the latest | IT-04: state never regresses; stale completion discarded and logged | T-2.2.5 |
+| R-02 | A caller timeout prevents reconciliation with a valid later completion | The Preparer's browser gives up on a 200,000-line check; the run finishes but the fix list never appears, and the firm misses the 2-day turnaround | Requests return 202 and poll; lease and sweeper never fail a job whose attempt is live; completion accepted after the interface stopped waiting | Jobs succeeded but never read; queue age | IT-05: result visible on next read; superseded attempt discarded | T-2.2.5 |
+| R-03 | New utilities duplicate behaviour already owned by shared code | A second TRN validator or a second status function disagrees with the first; the dashboard and the report show different statuses for one client | One rule engine, one status function, one calendar lookup in `packages/rules`; review checklist item | Lint for duplicate validators; differing status in two places | ARCH-01 plus UT-11 run through both API and worker entry points give equal results | T-2.1.1 |
+| R-04 | Applications import private code across architectural boundaries | The web app reaches into worker parsing code; a parser change breaks sign-in pages during a deadline week | Import-boundary lint; packages expose a public interface only | CI failure | ARCH-01: seeded cross-app import fails | T-2.1.1 |
+| R-05 | Tenant enforcement is scattered or bypassed through APIs, workers, caches or files | One firm sees another firm's client names, TRNs and prices: the end of trust in a product sold to tax agents | Row-level security plus service-layer checks; one tenancy session for API and worker; firm-prefixed object keys; no cache | Audit events for denied cross-firm access | IT-01 across every endpoint, file path and worker context: 404 and 0 rows | T-2.2.2, T-5.1.1 |
+| R-06 | Workers copy configuration and utility modules, causing behavioural drift | The worker's copy of the size limit or the Asia/Dubai date helper differs from the API's; a deadline shows a day late | Single `packages/core/config` and date helper; no copies | Lint for duplicated module names | ARCH-01: a copied config module in `apps/worker` fails; UT-13 run in the worker | T-2.1.1 |
+| R-07 | Worker logging imports web-only modules and crashes during startup | The worker dies on start after a deploy; uploads queue up unprocessed during a pilot | `packages/core/logging` has no web imports; worker start test in CI | Worker heartbeat missing; `/readyz` red | ARCH-01 web import fails; OPS-04 start check includes the worker | T-2.1.1, T-2.1.2 |
+| R-08 | ORM declarations omit indexes or constraints present in migrations | The unique index that stops duplicate uploads, or the one-current-snapshot index, exists in one path only; duplicates appear in a rebuilt environment | Parity check between migration-built and model-built schemas | CI diff | IT-11: schemas equal | T-2.2.1 |
+| R-09 | Interrupted migrations or backfills cannot resume safely | A fingerprint backfill on `findings` stops halfway; exceptions no longer match their findings and reappear as open blockers, or vanish | Backfills as resumable jobs with a progress row, outside schema transactions | Progress row not at 100% | IT-11: interrupted at 40%, resumes without duplicates | T-2.2.1, T-5.1.3 |
+| R-10 | Merged branches introduce conflicting migration order | Two developers add migrations for `rule_packs` and `calendar_versions`; deployment fails on the day a new MoF version must be loaded | Single-head CI check; rebase before merge | CI failure on two heads | IT-11: two heads fail | T-2.2.1 |
+| R-11 | Index creation locks busy production tables during deployment | An index build on `findings` blocks check runs while firms are uploading before 31 March 2027 | Concurrent builds; 5-second lock timeout; deploy outside the UAE working day | Lock wait alerts | IT-11: no statement waits beyond 5 seconds | T-2.2.1, T-5.1.3 |
+| R-12 | Correlation IDs disappear across jobs and retries, or sensitive data leaks into logs | A failed run cannot be traced for the firm; or customer names and TRNs from uploads sit in logs kept outside the retention rules | Correlation identifier on request, job and retry; log allow-list of identifiers and counts | Logs without identifier; pattern scan for 15-digit numbers | IT-10: 0 matches for fixture TRN and name; one identifier end to end | T-2.2.4 |
+| R-13 | Upload keys collide or fail to isolate tenant, source and purpose | Two firms upload `customers.xlsx`; one overwrites the other, or a handoff pack is built from the wrong client's file | Generated keys with firm, entity and purpose prefixes; unique `storage_key` | Constraint violations | IT-15: distinct keys per firm and purpose | T-2.2.6 |
+| R-14 | Temporary uploads survive retention expiry or failed cleanup | Client invoice exports and expired exports remain after the period promised in the pilot agreement | `expires_at`; sweeper with counts; orphan scan; alert | Rows past `expires_at`; sweeper failure | IT-09: expired and orphaned objects removed; failure alerts and recovers | T-2.2.6 |
+| R-15 | Missing persistent volumes cause data loss after service recreation | Database and files are managed services, so the exposure is the proxy's certificate data and local development volumes; losing certificates takes the site down in a deadline week | Named volumes; start check; data never on the VM disk | Start-up check; certificate expiry alert | OPS-03: recreate containers, everything intact | T-2.1.4 |
+| R-16 | Generated file links use internal hosts or `localhost` behind a public proxy | An invitation or a report link in the monthly summary points at an internal address; the Reviewer cannot open it | One validated `PUBLIC_BASE_URL`; files streamed through the API | Start refusal; staging link check | OPS-05: public HTTPS host in email and download; bad value stops start | T-2.1.4 |
+| R-17 | Local dependencies and workers lack a reliable single startup command and health checks | A developer tests uploads with no worker and believes parsing works; the founder cannot restart the stack alone during a pilot | `make dev` waits for every service; readiness covers database, storage, migrations, worker | Command exit code | OPS-04: healthy in 3 minutes; clear failure with the database stopped | T-2.1.2 |
+| R-18 | Browser Back, refresh or deep links lose the user's result or task state | A Preparer 60 findings into a filtered fix list presses Back and loses position; a partner's emailed link to a client opens the dashboard instead | Filters, cursor and open finding in the URL; server jobs; deep-linkable routes; return URL after sign-in | Front-end error reports; pilot questions | E2E-03, E2E-07 | T-3.3.1, T-3.3.3 |
+| R-19 | Bulk processing skips files, hides partial failures or duplicates successful work on retry | Three exports are uploaded and the invoices file fails silently; the client shows few gaps because invoices were never checked. Or a batch re-run of stale clients repeats completed ones | Per-file and per-entity states; totals must equal the count; retry selects failed only; hash-unique uploads; "Data incomplete" status when a dataset is missing | Totals mismatch; uploads not terminal in 15 minutes (M-10) | IT-06: 3 parsed, 1 rejected, retry touches 1; per-entity batch outcomes | T-3.1.1 |
+| R-20 | Unclear labels, icons, stale routes or broken links misdirect users | "Ready" is read as "the ASP will accept it"; "Appointed" is confused with "Onboarded"; a link in an old report leads nowhere | Fixed vocabulary (design §8); "Data-ready" with pack version; icon with word; route table and link check | Link-check failures; questions logged in pilots | NAV-01; A11Y-03 greyscale review | T-5.1.6 |
+| R-21 | Unrequested features consume effort without a requirement or pilot need | Time goes to connectors, XML generation or ASP formats while the decisive question (will a firm pay for month 3) stays open and cash falls as in Decision §7.5 | Every pull request cites an MH, R or task; non-goals with admission evidence (PRD §2); weekly triage | Pull requests without a reference | GOV-01 | T-2.1.3, T-6.2.4 |
+| R-22 | Misnamed, duplicate or stale branches obscure the active work or endanger unmerged changes | A rule-pack correction for a new PINT AE release sits on an old branch and never reaches the pilot firms | Protected `main`; `type/T-x.y.z-slug`; merged branches auto-deleted; weekly report | Stale-branch report | GOV-02 | T-2.1.3, T-6.2.4 |
+
+R-05's cache clause becomes live if a cache is added; R-16 widens if AD-03 changes to pre-signed links; R-15 widens if the database or files move onto the VM.
+
+## 6. Findings register
+
+Reserved for the independent reviewer. IDs `F-001`, `F-002`, …. The author records the fix; the reviewer records the retest.
+
+Round 1, independent reviewer, 2026-11-10. Evidence and impact are shortened from the reviewer's note. Owner of every fix: Author A. Fixes made 2026-11-10. The last column for F-001 to F-019 is the independent reviewer's round 2 verdict of 2026-11-10, copied from the reviewer's records (`pint-ae-readiness-round2.md` and `pint-ae-readiness-verdicts.json` in the lead's coordination folder), not the author's opinion. F-020 and F-021 were raised in round 2 and fixed afterwards; no further round is planned, so their retest is pending.
+
+| ID | Severity | File | Evidence | Impact | Owner | Fix made | Files changed | Retest condition | Retest result (independent reviewer, round 2) |
+|---|---|---|---|---|---|---|---|---|---|
+| F-001 | Blocker | PRD §5, MH-05, MH-08; schema; UT-03, UT-11; design S-08 | A field marked "not in this file" left its rule unrun and the client could reach Data-ready | False Ready | Author A | Lead ruling applied: `not_checked` on a blocker rule is an open blocker; new status "Checks incomplete"; score denominator defined; snapshot `unchecked_blockers` with a check constraint; no exception allowed on an unchecked result; S-08, S-10, design copy agree; UT-03, UT-11, E2E-02, IT-19 cover it | PRD, schema, App-flow, design, execution-plan, CLAUDE | PRD §5/MH-08 block Data-ready on any unchecked blocker; UT-11 and E2E-02 carry the case; UT-03 and S-08 agree | Closed, part open: outcome of RC-11 'manual review' rows (type codes 389, 261) is undefined, so whether they block Data-ready is not stated |
+| F-002 | Major | PRD §7; App-flow S-08, S-12; schema §4 | The wrong-column mistake had no reviewer | A Preparer alone could mis-map a checked field | Author A | Column mappings need Reviewer or Owner approval before any report approval; S-12 shows mappings with samples; `column_mappings.approved_*`; permission row; IT-02 case; PRD §7 corrected | PRD, App-flow, schema, TRD, execution-plan | Reviewer approval in S-08, schema and IT-02 | Closed |
+| F-003 | Major | TRD §6.2, AD-10; schema; PRD §5; tests | Staleness depended on a job; no fault test; no 45-day mechanism; incident steps untasked; sent PDFs | Old Data-ready rows and reports could stand | Author A | Staleness and supersession derived on every read (AD-11, view `entity_status`, no stored flag); job reduced to notices; IT-17 fault test; UT-17 for 45 days; T-6.1.5, `system_flags`, OPS-06 for the incident procedure; reports carry a reference code and a currency lookup. Open part: a PDF already sent cannot change; the firm must re-issue | PRD, TRD, schema, App-flow, execution-plan | Derived staleness plus fault test; 45-day test; incident task and test; report currency check | Closed, part open: a PDF already sent cannot be recalled; the firm must re-issue |
+| F-004 | Major | MH-03, MH-09, MH-10; S-04; design; Decision §3; UT-10 | SEG-U described four ways; no place in the sort | A possibly overdue client could sit undated | Author A | One rule in Decision §3: both outcomes shown, earliest possible date governs sort and days-left; government entity of unknown Revenue is SEG-G; SEG-N stored as "before first invoice"; no Revenue is invented; UT-10 and E2E-08 | Decision, PRD, App-flow, design, schema, execution-plan | One SEG-U rule everywhere; sort test including SEG-U | Closed |
+| F-005 | Major | Decision §3; schema; T-1.1.2; UT-16 | CAL-n used both for calendar versions and for provisions; no home for date-bound provisions | Next version would collide; rules could not be date-bound | Author A | CAL-1, CAL-2 are calendar versions only; provisions renamed PRV-1 to PRV-4; table `provisions`, `rules.valid_from`/`valid_to`, `calendar_rules.deadline_basis`; UT-18 boundary test for PRV-2 | Decision, PRD, schema, execution-plan | Separate IDs; stated home; one boundary test | Closed |
+| F-006 | Major | Decision §1, §4, §10 | Wafeq's API route for existing ERPs omitted; Zoho Practice unmentioned | Gap overstated | Author A | Wafeq page re-opened: API route recorded with no price, no named systems, no described test facility; gap restated as pre-contract check, Excel-kept books and cross-ASP view; SR-2 question covers API-connected clients; Zoho Practice and Accountant Program recorded as not read | Decision | §4 records the API product; gap and SR-2 cover it; Zoho Practice noted | Closed |
+| F-007 | Major | Decision §12, §13; T-0.1.2, T-0.2.1 | No UAE rule on cold email, calls or personal data cited | The only channel may be unlawful | Author A | Primary texts attempted and blocked (federal legislation site 403); instruments named and labelled unverified; legal questions LQ-1 to LQ-5; T-0.1.2 acceptance requires written clearance per channel before T-0.2.1; cold calls held; consequence for the funnel stated. **Open:** the answers | Decision, execution-plan, PRD | Rules named with status; legal clearance gates the first send | Open by design: lawfulness of cold email, LinkedIn and calls is unknown until written answers to LQ-1 to LQ-5 exist; first send is gated on them |
+| F-008 | Major | T-0.2.3, T-0.3.2, T-2.1.4; Decision §11 | Real files handled in Phase 0 with no store or procedure | Client data uncontrolled | Author A | T-0.1.5 creates the UAE-region store and handling procedure with acceptance checks before any file; T-0.2.3 depends on it; Decision §11 item 4 made a gate tied to LQ-4 | execution-plan, Decision | Phase 0 store task before T-0.2.3; decision 4 resolved or gated | Closed |
+| F-009 | Major | T-0.1.3, T-1.1.2, T-1.1.3, T-6.2.3 | Fixture used before it existed; rule watch only in Phase 6; no second check of hand work | False Ready during hand delivery | Author A | T-0.1.6 builds FX-A and FX-B in Phase 0; T-0.1.7 weekly watch from week 1; calendar sheet and T-1.1.2 second-person check; T-0.3.4 independent check of every hand report | execution-plan, Decision | Fixtures and watch in Phase 0; independent checks | Closed |
+| F-010 | Major | Decision §5.2, §12; M-04; MH-15; schema; T-0.3.2 | Turnaround promise unmeasurable and unachievable in a burst; free check under-costed; handoff pack promised but P1 | Refunds and missed promise | Author A | Intake slots (10 entities per 2-business-day window) written into the offer; UAE business day defined; M-04 fields `intake_slot_at`, `intake_complete_at`, `delivered_at`, `business_holidays`, UT-19; free check costed at 4.5 h; refund and capacity cases in Decision §7.6; handoff promise conditional and MH-15 raised to P0; application-pilot criterion defined. **Open:** refund rate and holiday list are unsourced | Decision, PRD, schema, App-flow, execution-plan | Capacity and refund case; hours corrected; M-04 defined with fields and test; handoff aligned | Closed, part open: refund rate and UAE holiday list are unsourced |
+| F-011 | Major | Decision §7.1, §7.5; execution-plan §6; TRD §7 | Build cost absent from cash; sales tools possibly counted twice | Cash need understated | Author A | Build valued at the plan's 412–644 h: AED 109,642.75–171,383.33; month-12 cash with build shown in §7.6; founder-build alternative stated; 3,200 composition reconciled, sales tools only in acquisition | Decision, TRD, execution-plan | §7.1 values the plan's hours; build in cash view; 3,200 reconciled | Closed |
+| F-012 | Major | TRD §5.1, §11; App-flow; schema; SC-06 | Endpoints missing for many screen actions; vendor identity unspecified; publication control inconsistent | Routes escape the permission suite | Author A | Endpoint table rebuilt per screen action with a screen column; `vendor_users`, support session, read-only role (AD-12); publication control stated once as two-step, not two-person, with `publications`; IT-21; SC-06 re-run and its earlier "Pass" withdrawn | TRD, schema, App-flow, execution-plan, this file | Endpoint list complete; vendor identity and grant path; publication control consistent | Closed |
+| F-013 | Major | TRD §8.1, §8.8; S-01, S-02; schema | No recovery flow; V3, V4, V13 not selected | Locked-out Owner; control listed without design | Author A | S-18 and four recovery cases; recovery codes for all users; tables `recovery_codes`, `password_resets`, `owner_resets`; IT-18; ASVS 6.4.4, 6.5.1–6.5.3, 3.3.1, 3.3.2, 3.3.4, 3.4.1, 3.4.3, 3.5.1, 4.1.1, 4.1.3, 4.2.1, 13.3.1, 13.3.2 read and selected. **Open:** recovery proofing is no stronger than the emailed invitation | TRD, App-flow, schema, design, execution-plan | Recovery in App-flow, API, schema and a test; V3/V4/V13 selected or not met | Closed, part open: recovery proofing is only as strong as the emailed invitation; SRC-22 chapter list not extended |
+| F-014 | Major | design §4, §7, §8; A11Y tests | Upload and mapping withheld below 768 px, so unusable at 400% zoom; icon rule inconsistent; criteria untested | AA target missed by design | Author A | Upload and mapping work at 320 CSS px as stacked cards; nothing withheld; icons always labelled; 1.4.10 mapped to S-07, S-08, S-10; A11Y-05 to A11Y-07 added and every mapped criterion assigned to a test | design, App-flow, execution-plan | S-07/S-08 usable at 320 px; icon rule consistent; tests cover every criterion | Closed |
+| F-015 | Minor | Decision §5.1, §6, §12 | Brief items dropped silently | Fidelity | Author A | All listed in Decision §13 as not adopted or not used, with the reason | Decision | Listed in §13 | Closed |
+| F-016 | Minor | Decision §1, §4 | "Pays its ASP little or nothing" was inference | Overstated free floor | Author A | Sentence labelled [A] and limited to transaction charges; plan prices stated; MD 168 cited as read by the reviewer, not the author | Decision | Labelled and matched to source | Closed |
+| F-017 | Minor | Decision §7.3, §7.5, §9 | 42.68; 4,536 against 4,500; no false-stop figure for revised SR-1 | Small | Author A | 42.67; the AED 36 explained as rounding of 1,785.71 to 1,800; SR-1 false-stop stated as not computable, bounded 0.023 to 0.108 | Decision | Corrected or noted | Closed |
+| F-018 | Minor | schema | No seller address or registration type; no logo field; role rule as CHECK | Seller checks had no data | Author A | Seller profile fields on `client_entities`, entered on S-05, sourced from licence and EmaraTax profile; `firms.logo_file_id`; role rule moved to service layer and trigger | schema, PRD, App-flow | Fields or source named; rule moved | Closed |
+| F-019 | Minor | verification §4; PRD §9 | MH-10, MH-15, MH-14 without asserting tests; no primary metric | Trace gaps | Author A | E2E-08, IT-19, IT-20 added and traced; M-02 marked primary | PRD, execution-plan, this file | Tests added; M-02 decisive | Closed |
+
+| F-020 | Major (regression) | Decision §7.5, §9, §12; execution-plan M0.1, T-0.2.1 | Outreach still began 16 November 2026 although the legal answers and the file store now precede the first send; SR-1's sample depended on that start; no cost for the legal answers | The stop rule would fire because of the gates, not the product | Author A | Plan re-dated from the gates: earliest first send 14 December 2026 [A]; SR-1 counted at day 77 after the first send (28 February 2027), recount day 91 (14 March), SR-4 day 44 (26 January); last permitted first send 11 January 2027; false-stop 0.108 on the re-dated count and 0.641 if 31 January were kept; AED 10,000 legal placeholder in startup cost and a month 0 in the cash table; Decision §1 says plainly that little of the demand window remains | Decision, PRD, execution-plan, this file | Decision states start date, SR-1 date and sample under the gates and names the legal cost | Closed, part open: execution-plan section 1 diagram still read "Gate: 31 Jan 2027" (independent reviewer, final retest 2026-11-10, `pint-ae-readiness-round2.md`; verdict transcribed by the lead). The lead corrected that node to 28 Feb 2027 afterwards; that edit was not re-reviewed |
+| F-021 | Minor (regression) | PRD §5, MH-03, MH-12; TRD §6.3; IT-13, UT-08; schema; Decision §13 | Leftover wording conflicts | Documents disagreed | Author A | A calendar change supersedes reports and never makes a result Stale (PRD §5, MH-03, MH-12, TRD §6.2, §6.3); IT-13 expects derived Stale; UT-08 expects "not checked"; `grace_period` and `manual_review` added to the PRD outcome list; SRC-22 lists V3, V4, V13 | PRD, TRD, execution-plan, schema, Decision | Wording aligned | Closed (independent reviewer, final retest 2026-11-10, `pint-ae-readiness-round2.md`; verdict transcribed by the lead) |
+
+After round 2, for the open part of F-001: self-billed records (codes 389, 261) now have the outcome `manual_review`, which blocks Data-ready until a Reviewer resolves it (PRD §5, RC-11, schema, S-10, UT-11); closed at the final retest (independent reviewer, final retest 2026-11-10, `pint-ae-readiness-round2.md`; verdict transcribed by the lead).
+
+Nothing is disputed. Reviewer's fresh-reader gap 6 (which calendar a Stale row's date comes from) is answered in PRD MH-03 and S-04: always the current published calendar.
+
+### 6.1 Author self-check log
+
+Run on 2026-11-10 with a script kept outside the repository. These are the author's checks, not review findings.
+
+| ID | Check | Result |
+|---|---|---|
+| SC-01 | Exactly ten required files, nothing else | Pass |
+| SC-02 | Every relative link resolves to a file and, where given, a heading anchor | Pass |
+| SC-03 | Every MH, S, AD, DD, T, UT, IT, E2E, LOAD, OPS, A11Y, R, RC, SR and M identifier that is referenced is defined once | Pass |
+| SC-04 | MH-01 to MH-15 each have a row in section 4 | Pass |
+| SC-05 | R-01 to R-22 each have a row whose task IDs exist in execution-plan.md | Pass |
+| SC-06 | Screens in App-flow.md, endpoints in TRD.md, tables in schema.md and tasks agree with the matrix | First run recorded "Pass" on a check that compared only table and task names; the reviewer found missing endpoints (F-012). Re-run after the fix with every screen action compared by hand against TRD §5.1: Pass |
+| SC-07 | Economics re-run: gross profit 557.15; payback 3.23; break-even 8 and 43 (42.67); ramp table with month 0; one-off case; CAD conversions; 111.3 h and loaded cost 6,193.38; build 109,642.75–171,383.33 | Pass after round 2 |
+| SC-08 | Binomial: 0.108 at 600 closed contacts, 0.177 at 500, 0.282 at 400, 0.641 at 200; 0.564 pass probability at half the close rate; day and date arithmetic from a 14 December 2026 first send | Pass after round 2 |
+| SC-09 | Estimate sums: phases total 412–644 hours | Pass after round 1 |
+| SC-10 | Highest-consequence failure named identically in PRD.md, CLAUDE.md and this file | Pass |
+| SC-11 | No credentials; examples synthetic; all diagrams Mermaid | Pass |
+| SC-12 | Word count against the 16,000–20,000 target | Over target and further over after the round 1 fixes; see section 8 |
+| SC-13 | Round 1: reviewer's recalculation and integrity scripts re-run against the fixed files; own link, ID, matrix and risk checks re-run | Pass; the reviewer's script still prints the round 0 phase list (400–628), which the fixes changed to 412–644 |
+
+## 7. Open items that documents cannot close
+
+| Item | Needed evidence | Owner |
+|---|---|---|
+| Willingness to pay | Paid pilots (M-01) | Founder |
+| Whether the ASP already covers the work | SR-2 answers; M-03 | Founder |
+| Whether the monthly job is wanted | Month-3 payments (M-02); cycle use (M-07) | Founder |
+| Distinct ICP firms | T-0.1.1 count | Founder |
+| Whether RP-1's checks predict ASP acceptance | M-08 from pilots; comparison with an ASP's test results | Founder, pilot firm |
+| Effective dates of PINT AE releases | A statement from MoF or OpenPeppol | Founder |
+| Lawfulness of cold email, LinkedIn messages and calls to UAE tax agents; use of FTA directory contacts; processing client data with access from Canada; the "not an ASP" wording | Written answers to LQ-1 to LQ-5 (T-0.1.2) | Lawyer |
+| Refund rate; UAE public-holiday list; second checker | Pilots; an official holiday announcement; founder decision | Founder |
+| What Wafeq's API route costs and tests before go-live; what Zoho Practice shows per client | The vendors' pages or a sales answer | Founder |
+| ASVS and WCAG conformance | Testing of a built application | Developer |
+
+## 8. Outstanding items
+
+| Item | Why open | Next step |
+|---|---|---|
+| Recurring job has no evidence | Decision §5.3 | Gate C |
+| Little of the demand window is left after the gates (F-020) | First send 14 December 2026 at the earliest; decision 28 February 2027; month-3 evidence after 31 March 2027 | Founder decisions 9 and 10; do not start after 11 January 2027 |
+| Legal cost unknown (F-020) | AED 10,000 is a placeholder | Obtain a quote in week 1 |
+| One diagram date corrected after the final retest (F-020 leftover) | Edit made by the lead, not re-reviewed | None; recorded for accuracy |
+| Refund rate and UAE holiday list unsourced (F-010) | No source | Pilots; official announcement |
+| Outreach channel not legally cleared (F-007) | Primary texts blocked; LQ-1 to LQ-3 unanswered | T-0.1.2 before any send |
+| Client-data handling from Canada not cleared (F-008) | LQ-4 unanswered | T-0.1.5 before any file |
+| Build cost AED 109,642.75–171,383.33 is unfunded in the model (F-011) | Decision §7.6 | Founder decision 7 |
+| Sent PDFs cannot be recalled (F-003) | Outside the product | Firm re-issues from "Reports to re-issue" |
+| Recovery proofing equals an emailed invitation (F-013) | TRD §8.1 | Accept for the pilot or add stronger proofing |
+| Hand-delivery capacity below expected demand (F-010) | Decision §7.6 | Slot schedule; internal runner |
+| Wafeq API route price and Zoho Practice not read (F-006) | Linked pages not opened | Read before the first discovery call |
+| Base case never reaches break-even | Decision §7.5 | Founder decision on partner channel or project pricing |
+| SEG-L date conflict between MoF guideline and decision | Decision §3 | Watch for a corrected guideline (T-0.1.7); no pilot impact |
+| Sources not opened | Decision §13 list | Read before relying on penalties, ASP eligibility, data-protection duties or competitor claims |
+| Brief items not reconciled | Lead cost per 100 prospects against the 30-day sales budget; 30-day cash budget split; "AED 3,000 MRR" in week 4; 18-day build; 80 founder hours against the 111.3 the offer needs | Founder to confirm the author's treatment |
+| ASVS 5.4.3 and 8.4.2 | Not met in the planned MVP (TRD §8.8) | Accept or schedule |
+| Margin-scheme tax category code | Not confirmed at source (PRD §6) | Read the PINT AE code list before T-1.1.1 |
+| Word count | Completeness was preferred to the target, as the guide allows | Reviewer to say what can go |
