@@ -1,0 +1,127 @@
+{
+  "object_type": "calendar_version",
+  "code": "CAL-2",
+  "basis": "Ministerial Decision 244 of 2025 as amended by Ministerial Decision 66 of 2026",
+  "source_refs": [
+    "SRC-05",
+    "SRC-06"
+  ],
+  "effective_from": null,
+  "effective_label": "assumed",
+  "rules": [
+    {
+      "segment": "SEG-L",
+      "deadline_basis": "fixed_date",
+      "appoint_by": "2026-10-30",
+      "implement_by": "2027-01-01",
+      "source_refs": [
+        "SRC-06 Art. 1"
+      ],
+      "note": "Person, Revenue >= AED 50,000,000",
+      "discrepancy": "MoF Guidelines V2.0 §8.3 (SRC-02) prints 31 October 2026; the amending decision (SRC-06) says 30 October 2026. The legal instrument's date is stored."
+    },
+    {
+      "segment": "SEG-S",
+      "deadline_basis": "fixed_date",
+      "appoint_by": "2027-03-31",
+      "implement_by": "2027-07-01",
+      "source_refs": [
+        "SRC-05 Art. 5(1)(b)"
+      ],
+      "note": "Person, Revenue < AED 50,000,000"
+    },
+    {
+      "segment": "SEG-G",
+      "deadline_basis": "fixed_date",
+      "appoint_by": "2027-03-31",
+      "implement_by": "2027-10-01",
+      "source_refs": [
+        "SRC-05 Art. 5(1)(c)"
+      ],
+      "note": "Government Entity"
+    },
+    {
+      "segment": "SEG-N",
+      "deadline_basis": "before_first_invoice",
+      "source_refs": [
+        "SRC-02 §8.4"
+      ],
+      "note": "Guideline text; legal article not located"
+    },
+    {
+      "segment": "SEG-X",
+      "deadline_basis": "not_subject",
+      "source_refs": [
+        "SRC-05 Art. 5(2)"
+      ],
+      "note": "Not subject until a Minister's decision"
+    },
+    {
+      "segment": "SEG-U",
+      "deadline_basis": "earliest_of_candidates",
+      "candidate_segments": [
+        "SEG-L",
+        "SEG-S"
+      ],
+      "source_refs": [
+        "Decision.md section 3 [P]"
+      ],
+      "note": "Product state, not a legal class"
+    }
+  ],
+  "provisions": [
+    {
+      "code": "PRV-1",
+      "kind": "voluntary_phase",
+      "applies_from": "2026-07-01",
+      "applies_to": null,
+      "selector": {},
+      "effect": "note_only",
+      "rule_code": null,
+      "source_refs": [
+        "SRC-05 Art. 3-4",
+        "SRC-02 §8.2"
+      ]
+    },
+    {
+      "code": "PRV-2",
+      "kind": "grace_period",
+      "applies_from": "2027-01-01",
+      "applies_to": "2028-12-31",
+      "selector": {
+        "buyer_class": "vat_group_member"
+      },
+      "effect": "exclude_from_denominator",
+      "rule_code": null,
+      "source_refs": [
+        "SRC-02 §6.3.2.1"
+      ]
+    },
+    {
+      "code": "PRV-3",
+      "kind": "pending_requirement",
+      "applies_from": null,
+      "applies_to": null,
+      "selector": {
+        "field": "hsn_code"
+      },
+      "effect": "note_only",
+      "rule_code": null,
+      "source_refs": [
+        "SRC-02 §12.2 item 28"
+      ]
+    },
+    {
+      "code": "PRV-4",
+      "kind": "residual_scope",
+      "applies_from": null,
+      "applies_to": null,
+      "selector": {},
+      "effect": "note_only",
+      "rule_code": null,
+      "source_refs": [
+        "SRC-05 Art. 5(1)(d)"
+      ]
+    }
+  ]
+}

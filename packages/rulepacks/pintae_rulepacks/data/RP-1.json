@@ -1,0 +1,744 @@
+{
+ "object_type": "rule_pack",
+ "code": "RP-1",
+ "basis": "PINT AE Billing 1.0.4 (Final) with MoF Mandatory Fields V1.1 (28 October 2026)",
+ "released_on": "2026-06-02",
+ "effective_from": null,
+ "effective_label": "assumed",
+ "source_refs": [
+  "SRC-10",
+  "SRC-11",
+  "SRC-03",
+  "SRC-12",
+  "SRC-13",
+  "SRC-02"
+ ],
+ "segments": [
+  "SEG-L",
+  "SEG-S",
+  "SEG-G",
+  "SEG-N",
+  "SEG-U"
+ ],
+ "code_lists": {
+  "emirate": [
+   "AUH",
+   "DXB",
+   "SHJ",
+   "UAQ",
+   "FUJ",
+   "AJM",
+   "RAK"
+  ],
+  "document_type": [
+   "380",
+   "381",
+   "480",
+   "81"
+  ],
+  "document_type_manual_review": [
+   "389",
+   "261"
+  ],
+  "commercial_document_type": [
+   "480",
+   "81"
+  ],
+  "currency": [
+   "AED",
+   "AFN",
+   "ALL",
+   "AMD",
+   "ANG",
+   "AOA",
+   "ARS",
+   "AUD",
+   "AWG",
+   "AZN",
+   "BAM",
+   "BBD",
+   "BDT",
+   "BGN",
+   "BHD",
+   "BIF",
+   "BMD",
+   "BND",
+   "BOB",
+   "BRL",
+   "BSD",
+   "BTN",
+   "BWP",
+   "BYN",
+   "BZD",
+   "CAD",
+   "CDF",
+   "CHF",
+   "CLP",
+   "CNY",
+   "COP",
+   "CRC",
+   "CUP",
+   "CVE",
+   "CZK",
+   "DJF",
+   "DKK",
+   "DOP",
+   "DZD",
+   "EGP",
+   "ERN",
+   "ETB",
+   "EUR",
+   "FJD",
+   "FKP",
+   "GBP",
+   "GEL",
+   "GHS",
+   "GIP",
+   "GMD",
+   "GNF",
+   "GTQ",
+   "GYD",
+   "HKD",
+   "HNL",
+   "HTG",
+   "HUF",
+   "IDR",
+   "ILS",
+   "INR",
+   "IQD",
+   "IRR",
+   "ISK",
+   "JMD",
+   "JOD",
+   "JPY",
+   "KES",
+   "KGS",
+   "KHR",
+   "KMF",
+   "KPW",
+   "KRW",
+   "KWD",
+   "KYD",
+   "KZT",
+   "LAK",
+   "LBP",
+   "LKR",
+   "LRD",
+   "LSL",
+   "LYD",
+   "MAD",
+   "MDL",
+   "MGA",
+   "MKD",
+   "MMK",
+   "MNT",
+   "MOP",
+   "MRU",
+   "MUR",
+   "MVR",
+   "MWK",
+   "MXN",
+   "MYR",
+   "MZN",
+   "NAD",
+   "NGN",
+   "NIO",
+   "NOK",
+   "NPR",
+   "NZD",
+   "OMR",
+   "PAB",
+   "PEN",
+   "PGK",
+   "PHP",
+   "PKR",
+   "PLN",
+   "PYG",
+   "QAR",
+   "RON",
+   "RSD",
+   "RUB",
+   "RWF",
+   "SAR",
+   "SBD",
+   "SCR",
+   "SDG",
+   "SEK",
+   "SGD",
+   "SHP",
+   "SLE",
+   "SOS",
+   "SRD",
+   "SSP",
+   "STN",
+   "SVC",
+   "SYP",
+   "SZL",
+   "THB",
+   "TJS",
+   "TMT",
+   "TND",
+   "TOP",
+   "TRY",
+   "TTD",
+   "TWD",
+   "TZS",
+   "UAH",
+   "UGX",
+   "USD",
+   "UYU",
+   "UZS",
+   "VES",
+   "VND",
+   "VUV",
+   "WST",
+   "XAF",
+   "XCD",
+   "XOF",
+   "XPF",
+   "YER",
+   "ZAR",
+   "ZMW",
+   "ZWG"
+  ],
+  "unit": [
+   "H87",
+   "C62",
+   "EA",
+   "KGM",
+   "GRM",
+   "TNE",
+   "LTR",
+   "MLT",
+   "MTR",
+   "CMT",
+   "MMT",
+   "KMT",
+   "MTK",
+   "MTQ",
+   "KWH",
+   "HUR",
+   "DAY",
+   "MON",
+   "ANN",
+   "WEE",
+   "MIN",
+   "SEC",
+   "SET",
+   "PR",
+   "DZN",
+   "XBX",
+   "XPK",
+   "XCT",
+   "XBG",
+   "XPL",
+   "XRO",
+   "XBO",
+   "XCS",
+   "XPA"
+  ],
+  "tax_category": [
+   "S",
+   "Z",
+   "E",
+   "O",
+   "AE"
+  ],
+  "tax_category_without_rate": [
+   "E",
+   "O"
+  ],
+  "buyer_class": [
+   "uae_business",
+   "vat_group_member",
+   "government",
+   "foreign",
+   "consumer"
+  ],
+  "registration_type": [
+   "TL",
+   "EID",
+   "PAS",
+   "CD"
+  ]
+ },
+ "code_shapes": {
+  "emirate": "^[A-Z]{3}$",
+  "unit": "^[A-Z0-9]{2,3}$",
+  "tax_category": "^[A-Z]{1,2}$",
+  "document_type": "^[0-9]{2,3}$",
+  "currency": "^[A-Z]{3}$",
+  "buyer_class": "^[a-z_]+$"
+ },
+ "value_mapping_kinds": {
+  "emirate": "emirate",
+  "unit": "unit",
+  "tax_category": "tax_treatment",
+  "document_type": "document_type",
+  "buyer_class": "buyer_class"
+ },
+ "patterns": {
+  "trn": "^1[0-9]{12}03$",
+  "tin": "^1[0-9]{9}$"
+ },
+ "date_formats": [
+  "%Y-%m-%d",
+  "%d/%m/%Y",
+  "%Y-%m-%dT%H:%M:%S"
+ ],
+ "notes": [
+  "The unit list is a subset of UNECE Rec 20/21; a valid code outside it fails and needs a new pack version (safe direction).",
+  "The margin-scheme tax category is not confirmed at source and is not in this pack.",
+  "RP-1 covers mandatory fields at source-data level, not all 132 PINT AE jurisdiction rules (SRC-12). A pass is not a pass at an ASP."
+ ],
+ "rules": [
+  {
+   "code": "RC-01",
+   "severity": "blocker",
+   "evaluator": "seller_trn",
+   "applies_to": {
+    "dataset": "seller_profile",
+    "seller_vat": [
+     "yes"
+    ]
+   },
+   "fields": [
+    "trn"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "IBR-132-AE",
+    "MF 15"
+   ],
+   "description": "Seller VAT TRN is 15 digits, starts with 1, ends with 03"
+  },
+  {
+   "code": "RC-02",
+   "severity": "blocker",
+   "evaluator": "seller_tin",
+   "applies_to": {
+    "dataset": "seller_profile",
+    "seller_vat": [
+     "no"
+    ]
+   },
+   "fields": [
+    "tin",
+    "trn"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "IBR-148-AE",
+    "IBR-177-AE",
+    "GL §18.1.1"
+   ],
+   "description": "Seller TIN is 10 digits of form 1XXXXXXXXX; one of TRN or TIN exists"
+  },
+  {
+   "code": "RC-03",
+   "severity": "blocker",
+   "evaluator": "legal_registration",
+   "applies_to": {
+    "dataset": "seller_profile"
+   },
+   "fields": [
+    "registration_type",
+    "licence_number",
+    "licence_authority",
+    "passport_country"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "IBR-150-AE",
+    "IBR-173-AE",
+    "IBR-172-AE",
+    "IBR-012-AE",
+    "MF 13-14"
+   ],
+   "description": "Seller legal registration identifier and type (TL, EID, PAS, CD); authority name when TL; issuing country when PAS"
+  },
+  {
+   "code": "RC-04",
+   "severity": "blocker",
+   "evaluator": "address",
+   "applies_to": {
+    "dataset": "seller_profile"
+   },
+   "fields": [
+    "address_line",
+    "city",
+    "country_code",
+    "emirate"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "IBR-128-AE",
+    "MF 17-20"
+   ],
+   "description": "Seller address line, city, country; emirate is a listed code when country is AE"
+  },
+  {
+   "code": "RC-05",
+   "severity": "blocker",
+   "evaluator": "buyer_class",
+   "applies_to": {
+    "dataset": "customers"
+   },
+   "fields": [
+    "buyer_class"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "GL §6.2",
+    "GL §6.3.2",
+    "SRC-05 Art. 5(2)"
+   ],
+   "description": "Buyer class recorded: UAE business, VAT-group member, government, foreign, consumer"
+  },
+  {
+   "code": "RC-06",
+   "severity": "blocker",
+   "evaluator": "address",
+   "applies_to": {
+    "dataset": "customers",
+    "buyer_class": [
+     "uae_business",
+     "vat_group_member",
+     "government",
+     "foreign"
+    ]
+   },
+   "fields": [
+    "name",
+    "address_line",
+    "city",
+    "country_code",
+    "emirate"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "MF 21",
+    "MF 26-29",
+    "IBR-128-AE"
+   ],
+   "description": "Buyer name, address line, city, country code; emirate code when AE",
+   "params": {
+    "require_name": true
+   }
+  },
+  {
+   "code": "RC-07",
+   "severity": "blocker",
+   "evaluator": "buyer_tax_id",
+   "applies_to": {
+    "dataset": "customers",
+    "buyer_class": [
+     "uae_business",
+     "vat_group_member"
+    ]
+   },
+   "fields": [
+    "trn",
+    "tin"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "IBR-135-AE",
+    "MF 24"
+   ],
+   "description": "UAE business buyer has a VAT TRN in RC-01 format or a TIN"
+  },
+  {
+   "code": "RC-08",
+   "severity": "blocker",
+   "evaluator": "buyer_legal_registration",
+   "applies_to": {
+    "dataset": "customers",
+    "buyer_class": [
+     "uae_business",
+     "vat_group_member",
+     "government"
+    ]
+   },
+   "fields": [
+    "legal_reg_type",
+    "legal_reg_id",
+    "legal_reg_authority",
+    "legal_reg_country"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "IBR-136-AE",
+    "IBR-149-AE",
+    "IBR-101-AE",
+    "IBR-010-AE"
+   ],
+   "description": "Buyer legal registration identifier and type; authority when TL; issuing country when PAS. Applies to buyers on commercial invoices (480, 81) or with a UAE endpoint",
+   "params": {
+    "document_types": [
+     "480",
+     "81"
+    ]
+   }
+  },
+  {
+   "code": "RC-09",
+   "severity": "blocker",
+   "evaluator": "invoice_number",
+   "applies_to": {
+    "dataset": "invoices"
+   },
+   "fields": [
+    "invoice_number"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "MF 1"
+   ],
+   "description": "Invoice number present and unique within the seller (a number reused with a different date, buyer or type is a duplicate)"
+  },
+  {
+   "code": "RC-10",
+   "severity": "blocker",
+   "evaluator": "invoice_dates",
+   "applies_to": {
+    "dataset": "invoices"
+   },
+   "fields": [
+    "issue_date",
+    "due_date"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "MF 2",
+    "MF 6"
+   ],
+   "description": "Issue date valid; payment due date present"
+  },
+  {
+   "code": "RC-11",
+   "severity": "blocker",
+   "evaluator": "document_type",
+   "applies_to": {
+    "dataset": "invoices"
+   },
+   "fields": [
+    "document_type"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "BIS §1.5.1"
+   ],
+   "description": "Document type derivable: 380, 381, 480 or 81; 389 and 261 go to manual review"
+  },
+  {
+   "code": "RC-12",
+   "severity": "blocker",
+   "evaluator": "currency",
+   "applies_to": {
+    "dataset": "invoices"
+   },
+   "fields": [
+    "currency",
+    "exchange_rate"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "MF 4",
+    "IBR-159-AE",
+    "IBR-002-AE"
+   ],
+   "description": "Currency is an ISO 4217 code; when not AED an exchange rate with at most 6 decimals exists",
+   "params": {
+    "max_rate_decimals": 6
+   }
+  },
+  {
+   "code": "RC-13",
+   "severity": "blocker",
+   "evaluator": "present",
+   "applies_to": {
+    "dataset": "invoices"
+   },
+   "fields": [
+    "payment_means"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "MF 9"
+   ],
+   "description": "Payment means present"
+  },
+  {
+   "code": "RC-14",
+   "severity": "blocker",
+   "evaluator": "quantity_unit",
+   "applies_to": {
+    "dataset": [
+     "invoices",
+     "items"
+    ]
+   },
+   "fields": [
+    "quantity",
+    "unit"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "MF 40-41",
+    "BIS §2.8"
+   ],
+   "description": "Line quantity present; unit maps to a UNECE Recommendation 20 or 21 code"
+  },
+  {
+   "code": "RC-15",
+   "severity": "blocker",
+   "evaluator": "item_details",
+   "applies_to": {
+    "dataset": "items"
+   },
+   "fields": [
+    "name",
+    "description",
+    "net_price",
+    "gross_price",
+    "base_quantity"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "MF 43-45",
+    "MF 50-51"
+   ],
+   "description": "Item name and description; net price, gross price, base quantity"
+  },
+  {
+   "code": "RC-16",
+   "severity": "blocker",
+   "evaluator": "tax_category",
+   "applies_to": {
+    "dataset": [
+     "invoices",
+     "items"
+    ]
+   },
+   "fields": [
+    "tax_category",
+    "tax_rate"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "IBR-139-AE",
+    "MF 46-47",
+    "GL §10.5"
+   ],
+   "description": "Tax category is an aligned code and a rate exists unless exempt or out of scope"
+  },
+  {
+   "code": "RC-17",
+   "severity": "blocker",
+   "evaluator": "arithmetic",
+   "applies_to": {
+    "dataset": "invoices"
+   },
+   "fields": [
+    "quantity",
+    "unit_price",
+    "line_net",
+    "tax_category",
+    "tax_rate",
+    "invoice_net_total",
+    "invoice_tax_total",
+    "invoice_total"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "BIS §4.1.2",
+    "BIS §4.2",
+    "GL §12.2(5)"
+   ],
+   "description": "Line net, document totals, tax per category and payable agree to 0.01 in decimal arithmetic; totals have at most 2 decimals"
+  },
+  {
+   "code": "RC-18",
+   "severity": "warning",
+   "evaluator": "code_480_lines",
+   "applies_to": {
+    "dataset": "invoices",
+    "document_types": [
+     "480"
+    ]
+   },
+   "fields": [
+    "tax_category"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "GL §18.3.1"
+   ],
+   "description": "Code 480 used only where every line is out of scope, not exempt or zero-rated"
+  },
+  {
+   "code": "RC-19",
+   "severity": "warning",
+   "evaluator": "transaction_flags",
+   "applies_to": {
+    "dataset": "invoices"
+   },
+   "fields": [
+    "transaction_flags"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "MF 5",
+    "IBR-154-AE",
+    "GL §10.4"
+   ],
+   "description": "Transaction-type flags derivable (8 binary flags)"
+  },
+  {
+   "code": "RC-20",
+   "severity": "blocker",
+   "evaluator": "credit_note",
+   "applies_to": {
+    "dataset": "invoices",
+    "document_types": [
+     "381"
+    ]
+   },
+   "fields": [
+    "credit_reason",
+    "preceding_invoice"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "BIS §1.5.1"
+   ],
+   "description": "Credit note carries a reason and a preceding invoice reference, except volume discount",
+   "params": {
+    "no_reference_reasons": [
+     "volume discount"
+    ]
+   }
+  }
+ ]
+}
