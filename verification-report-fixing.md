@@ -352,3 +352,50 @@ Reviewer's script `_coordination/review/pint-ae-readiness-b1-round3_adversarial.
 | `make dev-check` | Not ready, by name: `reference_data: failed (calendar_content_hash_mismatch)`. `pintae_dev` holds CAL-1 and CAL-2 published before migration 0004, without `content`, and the verified loader refuses them, as intended. Rebuilding `pintae_dev` (drop and recreate its schema, then `make dev`) was not permitted in this session and is left to the lead |
 
 Residual, by design: a superuser owner can still disable a trigger (DDL) or set `session_replication_role`; the test-suite cleanup does this for versions a test published. Documents changed: schema.md (reference-data lifecycle and guard, `calendar_versions.content`, `publications`), TRD.md section 7 (withdrawal), AGENTS.md (utilities index, `/readyz`) and this section.
+
+### 9.4 Retest round 4 (2026-11-11) and the fix after it
+
+Reviewer's round-4 verdicts, copied unchanged from `_coordination/review/pint-ae-readiness-b1-verdicts.json`:
+
+| ID | Reviewer verdict (round 4) |
+|---|---|
+| B1-001 | Closed |
+| B1-002 | Closed |
+| B1-003 | Closed |
+| B1-004 | Closed |
+| B1-005 | Closed |
+| B1-006 | Closed |
+| B1-007 | Closed |
+| B1-008 | Closed |
+| B1-009 | Closed |
+| B1-010 | Closed |
+| B1-011 | Closed |
+| B1-012 | Closed |
+| B1-013 | Closed |
+| B1-014 | New (major, regression): migration 0004 adds calendar_versions.content as NULL for calendars published before 0004 and the new guard forbids backfilling it; an upgraded database (pintae_dev included) fails reference_data with calendar_content_hash_mismatch, entity GET and run POST return 500, and re-publishing the same code does not repair it |
+| B2-001 | New (major, feat/b2-local-auth 77bbadd): using a recovery code clears totp_confirmed_at and replaces the TOTP secret before re-enrolment is confirmed; if re-enrolment is abandoned, the password alone or the reset link alone reaches a full session with an attacker-bound authenticator |
+
+Fix made after the round-4 retest, not yet re-reviewed (B2-001 is fixed on `feat/b2-local-auth`, section 10.1 there):
+
+| ID | State | Fix | Regression tests |
+|---|---|---|---|
+| B1-014 | **Fixed after round-4 retest, awaiting recheck** | Migration 0004b (after 0004, so a database already at 0004 is repaired too) adds `calendar_versions.content_origin` and fills `content` once, only where it is NULL, idempotently and resumably, from the version's own child rows (`pintae_core.calendar_content.derive_missing_content`). The shipped file is used when it hashes to the stored `content_hash` and describes exactly those rows (`publication`, hash unchanged); otherwise the rows are rebuilt and hashed (`derived_from_rows`). The guard on `calendar_versions` is suspended for that transaction only; schema.md records why this data step is allowed. A version whose rows are not a valid, sourced calendar becomes `legacy_unverified`: `current_calendar` skips it, so no run newly pins it; results pinned to it read Stale with reason `calendar_legacy_unverified`; loading it returns 409, never 500. The loader's row rebuild is now the same function | `integration/test_calendar_backfill.py`: `test_backfill_uses_the_published_file_when_it_matches_hash_and_rows`, `test_backfill_derives_content_from_rows_when_the_file_differs`, `test_unverifiable_calendar_is_legacy_never_pinned_and_pinned_results_read_stale` |
+
+Reviewer's scripts after the fix:
+- `pint-ae-readiness-b1-round4_upgrade.sh`, run from a scratch copy with this branch's head (63a0cc4) in place of 2cbce9d and the B2 head (9e6d36c) in place of 77bbadd; the script itself is unchanged.
+  - U1: a database built and seeded at pushed 63623c4 (0003) and then upgraded reports `reference_data: ok`, and CAL-1 and CAL-2 have content. The re-publish step returns the existing id. Its "backfill UPDATE" now writes content identical to what is stored, so the guard sees no change.
+  - U2 and U3: the upgraded schema equals the fresh schema, including ACLs.
+  - U4: fails at `invites` as before. This is the reviewer's demonstration that the old 0001 cannot build B2.
+  - U5: the 0001 SQL is identical.
+- `pint-ae-readiness-b1-round4_adversarial.py` together with the earlier scripts: 51 passed.
+- `pintae_dev` was upgraded in place on `feat/b2-local-auth`, without dropping anything. Its migration 0006 repeats the same idempotent step, because 0005 was applied there before 0004b existed. CAL-1 and CAL-2 became `publication`, and `make dev-check` is ready in 1.1 s.
+
+| Command (this branch, rebuilt `pintae_test`) | Result |
+|---|---|
+| `make test` | 158 passed, 0 failed (77 unit, 81 integration) |
+| `make lint` | Pass, 60 files |
+| `make typecheck` (60 files) | Pass, 0 errors |
+| `make arch` | Pass, 0 violations |
+| `make parity` | Equal, single head 0004b |
+
+Documents changed: schema.md (`calendar_versions.content_origin`, the 0004b data step and why it is allowed), AGENTS.md (utilities index), this section.
