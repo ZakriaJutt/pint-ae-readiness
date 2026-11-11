@@ -400,6 +400,54 @@ Reviewer's scripts after the fix:
 
 Documents changed: schema.md (`calendar_versions.content_origin`, the 0004b data step and why it is allowed), AGENTS.md (utilities index), this section.
 
+### 9.5 Retest round 5 (2026-11-11) and the fix after it
+
+Reviewer's round-5 verdicts, copied unchanged from `_coordination/review/pint-ae-readiness-b1-verdicts.json`:
+
+| ID | Reviewer verdict (round 5) |
+|---|---|
+| B1-001 | Closed |
+| B1-002 | Closed |
+| B1-003 | Closed |
+| B1-004 | Closed |
+| B1-005 | Closed |
+| B1-006 | Closed |
+| B1-007 | Closed |
+| B1-008 | Closed |
+| B1-009 | Closed |
+| B1-010 | Closed |
+| B1-011 | Closed |
+| B1-012 | Closed |
+| B1-013 | Closed |
+| B1-014 | Closed |
+| B2-001 | Closed |
+| B1-015 | New (major): calendar_content.classify (0004b/0006) adopts edited child rows as derived_from_rows when the stored hash still equals the shipped file but the rows differ, rewriting content_hash; a CAL-2 SEG-S appoint_by moved to 2028-12-31 at the pushed 0003 head becomes verified content after upgrade (U6a, U6b); deleted provisions likewise (U6c) |
+
+Fix made after the round-5 retest, not yet re-reviewed:
+
+| ID | State | Fix | Regression tests |
+|---|---|---|---|
+| B1-015 | **Fixed after round-5 retest, awaiting recheck** | `pintae_core.calendar_content.classify` (used by 0004b, and on B2 by 0006) marks a pre-0004 calendar `publication` only when three things hold: the calendar file shipped in the repository for that code hashes to the stored `content_hash`; that hash also equals the `publications` row; and the calendar rebuilt from the stored rows is identical to the file in canonical form and hash. Every other case becomes `legacy_unverified`: no shipped file, a different hash, or rows that differ. Such a version is never newly pinned; results pinned to it read Stale (`calendar_legacy_unverified`); loading it returns 409, never 500; an operator publishes a new version from the shipped definition. `derived_from_rows` is no longer produced, and loaders treat it as unverified, so a database upgraded with the round-4 draft is safe too. `/readyz` reports `reference_data` failed with `newest_calendar_unverified:<code>` while the newest published calendar is unverified; this is the operator signal the reviewer asked for, replacing the silent fallback. Rule packs needed nothing: their content has been NOT NULL and hashed since 0001 | `integration/test_calendar_backfill.py`: `test_b1_015_rows_edited_before_the_upgrade_are_never_verified` (4 cases: the reviewer's SEG-S deadline moved to 2028-12-31, provisions deleted, a note edited, the stored hash changed); `test_b1_015_rows_backfilled_by_the_earlier_draft_are_read_as_unverified`; `test_backfill_untouched_calendar_matching_the_shipped_file_is_verified` (the untouched variant, verified) |
+
+Reviewer's scripts after the fix (B1 head 2307e28; B2 head 18759a5, which merges it):
+- `pint-ae-readiness-b1-round5_upgrade.sh`, run with `B1NEW=2307e28 B2NEW=18759a5` (its variables; the script itself is unchanged).
+  - U1, U1b, U1c and the direct path in U3: `reference_data: ok`; CAL-1 and CAL-2 are `publication`, with the hash equal to the shipped file and to the `publications` row; SEG-S appoint-by reads 2027-03-31.
+  - U6a, U6b, U6c and U6d: CAL-2 is `legacy_unverified` with content NULL; the current calendar is CAL-1; `calendar_by_code(CAL-2)` is refused with `calendar_legacy_unverified`; `reference_data` reads failed with `newest_calendar_unverified:CAL-2`.
+  - U2 and U3: the upgraded schema equals the fresh schema.
+  - U4: fails, as the negative control is meant to.
+  - U5: the SQL is identical.
+- `pint-ae-readiness-b1-round5_adversarial.py`, the round-4 script and the earlier scripts: 52 passed at each head.
+- `pint-ae-readiness-b2-round5_security.py` at the B2 head: 9 passed.
+
+| Command (rebuilt `pintae_test`) | `feat/b1-foundation` | `feat/b2-local-auth` |
+|---|---|---|
+| `make test` | 162 passed (77 unit, 85 integration) | 199 passed (92 unit, 107 integration) |
+| `make lint` / `make typecheck` | Pass, 60 files / 0 errors | Pass, 71 files / 0 errors |
+| `make arch` / `make parity` | 0 violations / equal, head 0004b | 0 violations / equal, head 0007 |
+| `make dev-check` on `pintae_dev` (head 0007, CAL-1 and CAL-2 `publication`) | not applicable: `pintae_dev` is at a B2 revision | Ready in 1.1 s |
+
+Documents changed: schema.md (`calendar_versions` verification rule, the reason the data step is allowed, the `/readyz` signal), this section. Not changed: the reviewer's minor notes stay open as notes. These are the half-finished Owner reset that keeps the old authenticator until the user re-enrols, and migrations that import `pintae_core.calendar_content` at run time.
+
 ## 10. B2 build record (2026-11-11): sign-in and local services without external accounts
 
 Owner request of 2026-11-11, branch `feat/b2-local-auth` from `feat/b1-foundation` at `2cbce9d` (the B1-012 round-3 fix, section 9.3). Synthetic data only; no provider account, no secret in git (`backend/.env` is gitignored; `backend/.env.example` holds names only).
