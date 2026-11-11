@@ -157,7 +157,7 @@ Run on 2026-11-10 with a script kept outside the repository. These are the autho
 | Distinct ICP firms | T-0.1.1 count | Founder |
 | Whether RP-1's checks predict ASP acceptance | M-08 from pilots; comparison with an ASP's test results | Founder, pilot firm |
 | Effective dates of PINT AE releases | A statement from MoF or OpenPeppol | Founder |
-| Lawfulness of cold email, LinkedIn messages and calls to UAE tax agents; use of FTA directory contacts; processing client data with access from Canada; the "not an ASP" wording | Written answers to LQ-1 to LQ-5 (T-0.1.2) | Lawyer |
+| Lawfulness of cold email, LinkedIn messages and calls to UAE tax agents; use of FTA directory contacts; processing client data with access from Canada; the "not an ASP" wording | Written answers to LQ-1 to LQ-5 (T-0.1.2). C2 (2026-11-11): answered by compliance/self-check.md, owner sign-off recorded (Decision §11 item 13); residual risk per question stated there | Owner (no lawyer; professional help only on the triggers of self-check section 11) |
 | Refund rate; UAE public-holiday list; second checker | Pilots; an official holiday announcement; founder decision | Founder |
 | What Wafeq's API route costs and tests before go-live; what Zoho Practice shows per client | The vendors' pages or a sales answer | Founder |
 | ASVS and WCAG conformance | Testing of a built application | Developer |
@@ -168,11 +168,11 @@ Run on 2026-11-10 with a script kept outside the repository. These are the autho
 |---|---|---|
 | Recurring job has no evidence | Decision §5.3 | Gate C |
 | Little of the demand window is left after the gates (F-020) | First send 14 December 2026 at the earliest; decision 28 February 2027; month-3 evidence after 31 March 2027 | Founder decisions 9 and 10; do not start after 11 January 2027 |
-| Legal cost unknown (F-020) | AED 10,000 is a placeholder | Obtain a quote in week 1 |
+| Legal cost unknown (F-020) | AED 10,000 is a placeholder. C2: no lawyer hired; kept as a contingency | Founder decision 16 (remove it and re-run Decision §7, or keep it) |
 | One diagram date corrected after the final retest (F-020 leftover) | Edit made by the lead, not re-reviewed | None; recorded for accuracy |
 | Refund rate and UAE holiday list unsourced (F-010) | No source | Pilots; official announcement |
-| Outreach channel not legally cleared (F-007) | Primary texts blocked; LQ-1 to LQ-3 unanswered | T-0.1.2 before any send |
-| Client-data handling from Canada not cleared (F-008) | LQ-4 unanswered | T-0.1.5 before any file |
+| Outreach channel not legally cleared (F-007) | C2: LQ-1 to LQ-3 answered by compliance/self-check.md sections 1 to 3 (owner sign-off); Resolutions 56 and 57 official text still blocked (403) | Send only under self-check §1.2 or the partner model (Decision §11 item 14); no FTA directory contacts (item 15) |
+| Client-data handling from Canada not cleared (F-008) | C2: LQ-4 answered by compliance/self-check.md section 4, residual risk medium (remote viewing as a transfer is untested; Executive Regulations not issued) | T-0.1.5 and a signed agreement with self-check §9.3 before any file |
 | Build cost AED 109,642.75–171,383.33 is unfunded in the model (F-011) | Decision §7.6 | Founder decision 7 |
 | Sent PDFs cannot be recalled (F-003) | Outside the product | Firm re-issues from "Reports to re-issue" |
 | Recovery proofing equals an emailed invitation (F-013) | TRD §8.1 | Accept for the pilot or add stronger proofing |
@@ -562,3 +562,41 @@ An external review of the GTM playbook built from these documents was re-checked
 **Checks after C1 (clean `pintae_test`):** `make test` 217 passed (unit 97, integration 120), before C1 211; `make lint`, `make typecheck` (75 files), `make arch` (0 violations), `make parity` (equal, head 0008) pass; `make dev-check` ready, `pintae_dev` now has CAL-1, CAL-2, CAL-3 published. The integration conftest still publishes CAL-1 and CAL-2 only, so existing pins to CAL-2 stay valid; IT-22 publishes CAL-3 inside its own test.
 
 **Not changed, recorded:** the provision `kind` stays `grace_period` (a new kind would need a migration of the check constraint; the effect, exclusion from the denominator for a dated window, is identical); exact AED 50M stays SEG-U pending open decision 12; MD 197's 14-business-day issue rule (Art. 6(5)) is outside this product's checks.
+
+## 12. C2 compliance self-check 2026-11-11 (lead-checked, not legal advice)
+
+**Owner decision, 2026-11-11:** no lawyer is hired for now. Legal questions LQ-1 to LQ-5 and the related licence and VAT questions are answered by the owner's own research of primary sources in [compliance/self-check.md](compliance/self-check.md). The owner accepts the residual risk stated per question. The decision is recorded in Decision.md §11, item 13. Every gate that waited for a lawyer now reads "answered by compliance/self-check.md section X, owner sign-off recorded", with the original question text kept. This applies to Decision §1, §5.2, §11, §12, §13; execution-plan M0.1, T-0.1.2, T-0.1.4, T-0.1.5, T-0.2.1; PRD §8 dependencies; and sections 7 and 8 above.
+
+| Question | Answer in self-check | Residual risk | Primary source opened 2026-11-11 |
+|---|---|---|---|
+| LQ-1 cold email from Canada | §1: email only to self-published work addresses, with sender identity and an opt-out acted on the same day; partner model recommended | Medium if we send; low under the partner model | TDRA Unsolicited Electronic Communications Policy v1.0 (spam = unconsented marketing; opt-in; UAE link covers foreign senders); PDPL Arts 2, 4(2), 17 (Arabic, u.ae); CASL ss. 6, 10(9)(b), 11, 12; SOR/2013-221 s.3(f) (UAE listed, but cannot be relied on) |
+| LQ-2 calls | §2: no marketing calls, SMS or WhatsApp | Low | u.ae (Resolution 56 aims). Official text **blocked (403)**; Clyde & Co secondary |
+| LQ-3 FTA directory, LinkedIn | §3: FTA terms forbid copying contacts (cl. 2.1.10, 9.2), so the directory is used only to confirm registration [P]; LinkedIn by hand only (User Agreement s.8.2) | High if the directory is exported (red line); medium for LinkedIn | FTA Terms & Conditions; LinkedIn User Agreement |
+| LQ-4 client data from Canada | §4: processor duties, Art. 9 breach notice, Art. 22/23 transfer; UAE region only, synthetic data first, virtual desktop, clauses §9.3 | Medium | PDPL Arts 8, 9, 22, 23 (Arabic) |
+| LQ-5 not an ASP | §5: MD 168 of 2026 Art. 1 limits "Electronic Invoicing Services" to sending, receiving and exchanging e-invoices; we do none of these; disclaimer §9.4 | Low | MD 168 of 2026 (repeals MD 64 of 2025, effective 1 Oct 2026); MD 243 of 2025 Art. 5 |
+| Trade licence | §6: no UAE presence; the partner is independent | Medium | Commercial Companies Law Arts 335 to 339 (MoE English text) |
+| VAT | §7: sell only to firms with a verified TRN; reverse-charge note §9.5 | Low (registered firms); medium otherwise | VAT Decree-Law Arts 29, 30(2), 48(1); FTA E-Commerce VAT Guide §4.4 |
+
+**Software change (a rule in the research changes behaviour).** `packages/core/pintae_core/config.py` now refuses to start in staging or production unless `PINTAE_S3_REGION` is in `UAE_STORAGE_REGIONS`: AWS me-central-1, Azure uaenorth and uaecentral, Oracle me-dubai-1 and me-abudhabi-1. Storage outside the UAE would otherwise be an Art. 22/23 transfer. AWS me-south-1 (Bahrain) and Google me-central1 (Doha) are refused. New test: `backend/tests/unit/test_config_ops.py::test_c2_storage_region_must_be_in_the_uae_outside_local`. The existing production-settings test now passes a UAE region. Documented in TRD §7 and AGENTS §4.1. Local and test environments are unchanged.
+
+**[P] owner decisions added** (Decision §11):
+- 13: no lawyer (signed).
+- 14: no-lawyer operating model. A UAE partner introduces us under its licence. Email only, with identity and opt-out. No calls. Data in a UAE region. Synthetic demo first. Self-serve later. The referral fee is not modelled in §7.
+- 15: no FTA directory contacts. The distinct-firm count of §8 may fall.
+- 16: whether to remove the AED 10,000 legal placeholder. It is not removed, because §7 must then be re-run; it stays as a contingency.
+
+**Checks after C2 (clean `pintae_test`):**
+- `make test`: 218 passed (unit 98, integration 120); before C2, 217.
+- `make lint`: pass. `make typecheck`: pass, 75 files.
+- `make arch`: 0 violations. `make parity`: equal, head 0008.
+- `make dev-check`: ready.
+
+**Not verified:**
+- Official texts of Cabinet Resolutions 56 and 57 of 2024 and the English PDPL: uaelegislation.gov.ae returned 403 again; the bot check was not bypassed.
+- Whether PDPL Executive Regulations exist: none found.
+- Whether remote viewing from Canada is a "transfer".
+- Whether Resolution 56 covers foreign companies, B2B or LinkedIn.
+- Whether remote SaaS sales are an "activity inside the State", and the 2025 Commercial Companies Law amendments.
+- The Tax Procedures law, Canadian GST/HST, PIPEDA, and the DIFC and ADGM data laws.
+
+Not independently reviewed.

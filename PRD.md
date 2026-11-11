@@ -127,7 +127,7 @@ Rules of application: a consumer buyer is out of scope and leaves the denominato
 
 ## 8. Dependencies and constraints
 
-Dependencies: client authority to share data; MoF and OpenPeppol publications (no change feed; checked weekly by hand from Phase 0, execution-plan T-0.1.7); a UAE-region store from the first file (T-0.1.5) and host; written answers to legal questions LQ-1 to LQ-5 (Decision §12). Constraints: not an ASP and must say so [C]; data kept in the UAE region [C]; one founder, 1–3 developers in Vancouver, 11–12 hours from Dubai [C]; personal-data law not yet read (Decision.md section 13); English only.
+Dependencies: client authority to share data; MoF and OpenPeppol publications (no change feed; checked weekly by hand from Phase 0, execution-plan T-0.1.7); a UAE-region store from the first file (T-0.1.5) and host; written answers to legal questions LQ-1 to LQ-5 (Decision §12; C2, 2026-11-11: answered by compliance/self-check.md, owner sign-off recorded, no lawyer). Constraints: not an ASP and must say so [C] (wording: compliance/self-check.md section 9.4); data kept in the UAE region [C] (staging and production refuse a non-UAE storage region, C2); one founder, 1–3 developers in Vancouver, 11–12 hours from Dubai [C]; personal-data law read in Arabic in C2 (compliance/self-check.md section 4; Executive Regulations not issued); English only.
 
 ## 9. Success metrics
 

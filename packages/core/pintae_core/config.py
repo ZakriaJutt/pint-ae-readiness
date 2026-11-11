@@ -11,6 +11,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
+# Cloud regions physically in the UAE (C2, compliance/self-check.md section 4). AWS me-south-1 is
+# Bahrain and Google me-central1 is Doha, so neither is listed.
+UAE_STORAGE_REGIONS = frozenset(
+    {
+        "me-central-1",  # AWS Middle East (UAE)
+        "uaenorth",  # Azure UAE North (Dubai)
+        "uaecentral",  # Azure UAE Central (Abu Dhabi)
+        "me-dubai-1",  # Oracle Cloud Dubai
+        "me-abudhabi-1",  # Oracle Cloud Abu Dhabi
+    }
+)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -103,6 +115,14 @@ class Settings(BaseSettings):
                 raise ValueError("PINTAE_PUBLIC_BASE_URL must use https outside local")
             if parsed.hostname in ("localhost", "127.0.0.1", "::1"):
                 raise ValueError("PINTAE_PUBLIC_BASE_URL must be a public host outside local")
+        return self
+
+    @model_validator(mode="after")
+    def _storage_region_in_uae_outside_local(self) -> Settings:
+        # C2 (compliance/self-check.md section 4): client files stay in a UAE region so that
+        # storing them is not a PDPL Art. 22/23 cross-border transfer. Refuse to start otherwise.
+        if self.env not in ("local", "test") and self.s3_region not in UAE_STORAGE_REGIONS:
+            raise ValueError("PINTAE_S3_REGION must be a UAE region outside local and test")
         return self
 
 

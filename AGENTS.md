@@ -11,6 +11,7 @@ Canonical instructions for any agent or developer working in this repository. Bu
 5. [schema.md](schema.md): tables, permissions, retention, migrations.
 6. [execution-plan.md](execution-plan.md): tasks and tests.
 7. [verification-report-fixing.md](verification-report-fixing.md): traceability, risks R-01 to R-22, findings.
+8. [compliance/self-check.md](compliance/self-check.md): answers to LQ-1 to LQ-5 and related rules, templates, red lines (C2, 2026-11-11; not legal advice; replaces the lawyer).
 
 ## 2. Sources of truth
 
@@ -24,6 +25,7 @@ Canonical instructions for any agent or developer working in this repository. Bu
 | Tables, permissions, retention | schema.md | TRD |
 | Tasks and tests | execution-plan.md | verification file |
 | Risks, traceability, findings | verification-report-fixing.md | Any other file |
+| Legal rules per question, residual risk, templates, red lines, when to get professional help | compliance/self-check.md | Decision, PRD, TRD (they cite its sections) |
 
 Label every number as [C], [S: SRC-nn], [A] or [P] (Decision.md section 0). An assumption is never written as a finding. A legal date is never written without its source.
 
@@ -50,7 +52,7 @@ Label every number as [C], [S: SRC-nn], [A] or [P] (Decision.md section 0). An a
 
 | Concern | The one implementation |
 |---|---|
-| Settings (read once, validated; `PUBLIC_BASE_URL` rule) | `packages/core/pintae_core/config.py` |
+| Settings (read once, validated; `PUBLIC_BASE_URL` rule; C2 UAE storage-region rule `UAE_STORAGE_REGIONS`) | `packages/core/pintae_core/config.py` |
 | Structured logging, correlation identifier, field allow-list | `packages/core/pintae_core/logging.py` |
 | Asia/Dubai date helper | `packages/rules/pintae_rules/dates.py` |
 | Tenancy session (the only way to open a database session) | `packages/core/pintae_core/tenancy.py` |
@@ -116,6 +118,7 @@ Label every number as [C], [S: SRC-nn], [A] or [P] (Decision.md section 0). An a
 | A price, cost, rate or other operating assumption | Decision.md sections 6 to 9 and 12 together, then re-run the arithmetic; never one number alone |
 | An architecture decision | TRD.md section 9; affected risks in the verification file |
 | A risk's prevention or test | verification-report-fixing.md section 5 only |
+| A legal rule, outreach channel, data-handling step or template | compliance/self-check.md (section, quote, source opened, date, risk); Decision.md section 11 and section 12 gate table; execution-plan T-0.1.2, T-0.1.4, T-0.1.5, T-0.2.1; code and a test if it changes software behaviour (as `UAE_STORAGE_REGIONS`) |
 
 ## 9. Git hygiene
 
