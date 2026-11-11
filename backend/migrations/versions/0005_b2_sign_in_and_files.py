@@ -2,7 +2,7 @@
 stages, sign-in throttle and generated files (TRD 8.1, schema.md).
 
 Revision ID: 0005
-Revises: 0004
+Revises: 0004b
 Create Date: 2026-11-11
 """
 
@@ -13,7 +13,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "0005"
-down_revision = "0004"
+down_revision = "0004b"
 branch_labels = None
 depends_on = None
 

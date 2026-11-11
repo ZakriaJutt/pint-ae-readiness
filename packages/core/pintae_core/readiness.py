@@ -9,23 +9,22 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
+from pintae_core.calendar_content import calendar_rows_data, same_calendar
 from pintae_core.models import (
     AspStatus,
-    CalendarRuleRow,
     CalendarVersion,
     CheckRun,
     ClientEntity,
     ColumnMapping,
     FindingException,
     FindingRow,
-    ProvisionRow,
     ReadinessSnapshot,
     Report,
     RulePackRow,
@@ -127,10 +126,18 @@ def current_pack(s: Session, today: date) -> tuple[RulePackRow, RulePack]:
     return row, load_pack(row)
 
 
+LEGACY = "legacy_unverified"
+
+
 def current_calendar(s: Session) -> Calendar:
+    """The newest published calendar whose content is verified. A ``legacy_unverified``
+    version (B1-014) is never chosen, so no run newly pins it."""
     row = s.execute(
         select(CalendarVersion)
-        .where(CalendarVersion.status == "published")
+        .where(
+            CalendarVersion.status == "published",
+            CalendarVersion.content_origin.is_distinct_from(LEGACY),
+        )
         .order_by(CalendarVersion.published_at.desc())
         .limit(1)
     ).scalar_one_or_none()
@@ -149,44 +156,19 @@ def calendar_by_code(s: Session, code: str) -> Calendar:
     return _calendar(s, row)
 
 
+def calendar_is_legacy(s: Session, code: str | None) -> bool:
+    if code is None:
+        return False
+    origin = s.execute(
+        select(CalendarVersion.content_origin).where(CalendarVersion.code == code)
+    ).scalar_one_or_none()
+    return origin == LEGACY
+
+
 def _calendar(s: Session, row: CalendarVersion) -> Calendar:
-    rules = s.execute(
-        select(CalendarRuleRow).where(CalendarRuleRow.calendar_version_id == row.id)
-    ).scalars()
-    provs = s.execute(
-        select(ProvisionRow).where(ProvisionRow.calendar_version_id == row.id)
-    ).scalars()
-    data = {
-        "code": row.code,
-        "basis": row.basis,
-        "source_refs": list(row.source_refs.get("refs", [])),
-        "rules": [
-            {
-                "segment": r.segment,
-                "deadline_basis": r.deadline_basis,
-                "appoint_by": r.appoint_by.isoformat() if r.appoint_by else None,
-                "implement_by": r.implement_by.isoformat() if r.implement_by else None,
-                "candidate_segments": r.candidate_segments or [],
-                "source_refs": list(r.source_refs.get("refs", [])),
-                "note": r.note,
-                "discrepancy": r.discrepancy,
-            }
-            for r in rules
-        ],
-        "provisions": [
-            {
-                "code": p.code,
-                "kind": p.kind,
-                "applies_from": p.applies_from.isoformat() if p.applies_from else None,
-                "applies_to": p.applies_to.isoformat() if p.applies_to else None,
-                "selector": p.selector,
-                "effect": p.effect,
-                "rule_code": p.rule_code,
-                "source_refs": list(p.source_refs.get("refs", [])),
-            }
-            for p in provs
-        ],
-    }
+    if row.content_origin == LEGACY:
+        raise DomainError(409, "calendar_legacy_unverified", {"code": row.code})
+    data = calendar_rows_data(s, row.id, row.code, row.basis, row.source_refs)
     # B1-012: the calendar is read from its hashed, frozen content; the child rows must agree.
     content = row.content
     if (
@@ -196,13 +178,9 @@ def _calendar(s: Session, row: CalendarVersion) -> Calendar:
     ):
         raise DomainError(500, "calendar_content_hash_mismatch", {"code": row.code})
     cal = calendar_from_data(content)
-    if _sorted_provisions(cal) != _sorted_provisions(calendar_from_data(data)):
+    if not same_calendar(cal, calendar_from_data(data)):
         raise DomainError(500, "calendar_rows_differ_from_content", {"code": row.code})
     return cal
-
-
-def _sorted_provisions(cal: Calendar) -> Calendar:
-    return replace(cal, provisions=tuple(sorted(cal.provisions, key=lambda p: p.code)))
 
 
 # ----------------------------------------------------------------------------- entity facts
@@ -714,6 +692,11 @@ def read_status(s: Session, ent: ClientEntity, today: date, calendar: Calendar) 
             uploads=plan.versions.uploads,
         )
         eff, reasons = st.effective_status(base, pinned, current, run.newest_data_on, today)
+        if calendar_is_legacy(s, pinned.calendar_version):
+            # B1-014: a result pinned to a calendar whose content cannot be verified.
+            reasons = ["calendar_legacy_unverified", *reasons]
+            if base in st.STALE_REPLACES:
+                eff = st.Status.STALE
         pack_code = pinned.rule_pack
         counts_dict = {
             "failed_blockers": counts.failed_blockers,

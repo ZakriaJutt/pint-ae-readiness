@@ -60,6 +60,7 @@ Label every number as [C], [S: SRC-nn], [A] or [P] (Decision.md section 0). An a
 | Audit events | `packages/core/pintae_core/audit.py` |
 | Idempotency keys | `packages/core/pintae_core/idempotency.py` |
 | Runs, snapshots, status read, report pins and currency | `packages/core/pintae_core/readiness.py` |
+| Calendar content rebuilt from child rows; one-time backfill of pre-0004 calendars (B1-014) | `packages/core/pintae_core/calendar_content.py` |
 | Verified reference-data loaders (recompute the content hash; refuse a mismatch): `load_pack`, `current_pack`, `current_calendar`, `calendar_by_code` | `packages/core/pintae_core/readiness.py` |
 | Sign-in primitives: password hashing and policy, TOTP, TOTP-secret sealing, tokens, anti-forgery tokens, recovery codes | `packages/core/pintae_core/auth.py` (breached-password set: `breached.py`) |
 | Sign-in flows: invitations, password and TOTP steps, recovery codes, password reset, sign-out, users | `packages/core/pintae_core/identity.py` |

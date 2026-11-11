@@ -34,7 +34,14 @@ CHILDREN = (
     ("calendar_rules", "calendar_versions", "calendar_version_id"),
     ("provisions", "calendar_versions", "calendar_version_id"),
 )
-GUARDED = ("rule_packs", "rules", "calendar_versions", "calendar_rules", "provisions", "publications")
+GUARDED = (
+    "rule_packs",
+    "rules",
+    "calendar_versions",
+    "calendar_rules",
+    "provisions",
+    "publications",
+)
 
 PARENT_FUNC = r"""
 CREATE OR REPLACE FUNCTION pintae_published_immutable() RETURNS trigger
