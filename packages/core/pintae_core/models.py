@@ -40,7 +40,7 @@ NAMING = {
 
 
 # The migration head this code expects; /readyz compares it with alembic_version.
-SCHEMA_REVISION = "0003"
+SCHEMA_REVISION = "0004"
 
 
 class Base(DeclarativeBase):
@@ -134,6 +134,8 @@ class CalendarVersion(Base):
     status: Mapped[str]
     content_hash: Mapped[bytes]
     published_at: Mapped[datetime | None]
+    # The calendar file as published; loaders verify it against content_hash (B1-012).
+    content: Mapped[dict[str, Any] | None]
     __table_args__ = (
         CheckConstraint(_in("effective_label", ("stated", "assumed")), name="effective_label"),
         CheckConstraint(_in("status", ("draft", "published", "withdrawn")), name="status"),

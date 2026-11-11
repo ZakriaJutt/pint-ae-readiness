@@ -60,7 +60,8 @@ Label every number as [C], [S: SRC-nn], [A] or [P] (Decision.md section 0). An a
 | Audit events | `packages/core/pintae_core/audit.py` |
 | Idempotency keys | `packages/core/pintae_core/idempotency.py` |
 | Runs, snapshots, status read, report pins and currency | `packages/core/pintae_core/readiness.py` |
-| Rule-pack and calendar publication (two steps) | `packages/core/pintae_core/publication.py` |
+| Verified reference-data loaders (recompute the content hash; refuse a mismatch): `load_pack`, `current_pack`, `current_calendar`, `calendar_by_code` | `packages/core/pintae_core/readiness.py` |
+| Rule-pack and calendar publication (two steps) and withdrawal (`withdraw`, status only, terminal) | `packages/core/pintae_core/publication.py` |
 | Rule engine and evaluators | `packages/rules/pintae_rules/engine.py` |
 | Rule-pack loading, hashing, selection by effective date | `packages/rules/pintae_rules/packs.py` |
 | Segment function | `packages/rules/pintae_rules/segment.py` |
@@ -92,7 +93,7 @@ Label every number as [C], [S: SRC-nn], [A] or [P] (Decision.md section 0). An a
 - A change to a rule, the calendar, the segment function or the status function needs a unit test with a synthetic fixture and an expected outcome first.
 - A new endpoint is added to the tenant and permission suite (IT-01, IT-02) in the same change.
 - Fixtures are synthetic (FX-A to FX-E). Never commit customer data, credentials, tokens or real TRNs.
-- Commands. **Exists** (B1, run from the repository root): `make venv`, `make dev` (database, migrations, reference data, worker, API on port 8105, waits for `/readyz`), `make dev-check` (OPS-04), `make test` (rebuilds the `pintae_test` schema, then unit and integration tests), `make lint` (ruff), `make typecheck` (mypy strict), `make arch` (ARCH-01, `scripts/check_imports.py`), `make parity` (`scripts/check_schema_parity.py`), `python scripts/load_rulepack.py <file> --publisher-email <e> [--confirm-hash <hex>]`. **Still proposed**: `make e2e`, `scripts/run_checks_cli`, `scripts/seed_synthetic`, `scripts/restore_drill`, `scripts/sweep_expired`.
+- Commands. **Exists** (B1, run from the repository root): `make venv`, `make dev` (database, migrations, reference data, worker, API on port 8105, waits for `/readyz`, which also verifies the reference data in force against its content hash), `make dev-check` (OPS-04), `make test` (rebuilds the `pintae_test` schema, then unit and integration tests), `make lint` (ruff), `make typecheck` (mypy strict), `make arch` (ARCH-01, `scripts/check_imports.py`), `make parity` (`scripts/check_schema_parity.py`), `python scripts/load_rulepack.py <file> --publisher-email <e> [--confirm-hash <hex>]`. **Still proposed**: `make e2e`, `scripts/run_checks_cli`, `scripts/seed_synthetic`, `scripts/restore_drill`, `scripts/sweep_expired`.
 - Local environment: Python 3.12 virtual environment at `backend/.venv`; PostgreSQL `pintae_dev` and `pintae_test` used through the role `pintae_app` (NOSUPERUSER NOBYPASSRLS); the owner role only for migrations and publication. Redis database index 4 is assigned but unused (TRD AD-02). Docker is not used locally; the Compose setup in TRD section 7 stays proposed.
 
 ## 8. When something changes, update these

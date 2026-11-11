@@ -313,3 +313,42 @@ The reviewer's updated cases were run after the fixes. N4 and N5 now fail their 
 | `make dev-check` | Ready in 1.0 s |
 
 Not changed, as the reviewer noted: the worker's `run_checks` does not take the entity lock, and the timing-based lock tests may be flaky under CI load. Documents changed in this round: PRD.md (RC-08 row cites IBR-149-AE), schema.md (`rules`, `calendar_rules`, `provisions` immutability), App-flow.md (S-06 SEG-N display) and this section.
+
+### 9.3 Retest round 3 (2026-11-11) and the fix after it
+
+Reviewer's round-3 verdicts, copied unchanged from `_coordination/review/pint-ae-readiness-b1-verdicts.json`:
+
+| ID | Reviewer verdict (round 3) |
+|---|---|
+| B1-001 | Closed |
+| B1-002 | Closed |
+| B1-003 | Closed |
+| B1-004 | Closed |
+| B1-005 | Closed |
+| B1-006 | Closed |
+| B1-007 | Closed |
+| B1-008 | Closed |
+| B1-009 | Closed |
+| B1-010 | Closed |
+| B1-011 | Closed |
+| B1-012 | Still open: child rows now refuse owner UPDATE/DELETE/INSERT, but as the owner role a published RP-1 can be withdrawn, its content edited (RC-17 severity) and republished with plain UPDATEs, giving Data-ready on a wrong invoice total (X6); a withdrawn calendar can be set to draft, its children edited, then republished (X5); an UPDATE moving a child row to a draft parent is accepted (X4); TRUNCATE of the child tables is accepted (X3); content_hash is never verified against content |
+| B1-013 | Closed |
+
+Fix made after the round-3 retest, not yet re-reviewed:
+
+| ID | State | Fix | Regression tests |
+|---|---|---|---|
+| B1-012 | **Fixed after round-3 retest, awaiting recheck** | Migration 0004. (1) `pintae_published_immutable` on `rule_packs` and `calendar_versions`: a published or withdrawn row never changes apart from published → withdrawn; withdrawn is terminal (no return to published or draft); `content`, `content_hash`, `created_at`, `published_at` and every other column are frozen; a draft is never published by UPDATE; DELETE refused. (2) `pintae_published_child_immutable` checks the OLD and the NEW parent, so a child row cannot be moved to a draft pack (X4). (3) `BEFORE TRUNCATE` statement triggers on `rule_packs`, `rules`, `calendar_versions`, `calendar_rules`, `provisions`, `publications` (X3); `publications` rows refuse UPDATE and DELETE. (4) UPDATE, DELETE and TRUNCATE revoked from PUBLIC, `pintae_app` and the owner role; the owner keeps `UPDATE (status)` on the two parent tables for withdrawal. (5) `calendar_versions.content` stores the calendar file; `readiness.load_pack` and the calendar loader recompute `content_hash(content)` and refuse a mismatch, and the calendar is built from its content with the child rows required to agree. (6) `publication.withdraw` is the status-only withdrawal; `publish_*` refuses a withdrawn code (`version_withdrawn`). (7) `/readyz` reports `reference_data` failed when the pack or calendar in force does not verify | `integration/test_reference_immutability.py`: `test_x6_withdraw_edit_republish_is_refused_and_wrong_total_is_not_data_ready`, `test_x5_calendar_status_flip_cannot_unlock_children`, `test_x4_child_row_cannot_be_moved_to_a_draft_parent`, `test_draft_cannot_become_published_by_update`, `test_x3_truncate_refused_for_owner_and_app_role` (6 tables × with and without CASCADE), `test_publication_records_and_parents_cannot_be_deleted_or_edited` (4), `test_privileges_revoked_for_app_role_public_and_owner`, `test_withdrawal_is_terminal_and_pinned_runs_stay_pinned`, `test_loaders_refuse_content_that_does_not_match_its_hash`, `test_readiness_check_verifies_reference_data` |
+
+Reviewer's script `_coordination/review/pint-ae-readiness-b1-round3_adversarial.py`, run after the fix: 18 passed, 1 failed. The failure is `test_X3_owner_role_truncate`, whose assertion records the gap (it expects TRUNCATE to be accepted); all four TRUNCATE statements are now refused (`... is immutable reference data; TRUNCATE is refused`), which is the intended change. X4 is refused (`rules of a published rule_packs is immutable`), X5 is refused at the second step (`withdrawn CAL-2 is immutable and terminal`), and X6 is refused after the withdrawal (`withdrawn RP-1 is immutable`), so no wrong-total run was made. The earlier scripts (`-b1-adversarial_test.py`, `-b1-calendar_test.py`): 26 passed. `make test` was then rerun to rebuild `pintae_test`.
+
+| Command (after round 3, rebuilt `pintae_test`) | Result |
+|---|---|
+| `make test` | 155 passed, 0 failed (77 unit, 78 integration) |
+| `make lint` | Pass, 58 files formatted |
+| `make typecheck` (58 files) | Pass, 0 errors |
+| `make arch` | Pass, 0 violations |
+| `make parity` | Equal, single head 0004 |
+| `make dev-check` | Not ready, by name: `reference_data: failed (calendar_content_hash_mismatch)`. `pintae_dev` holds CAL-1 and CAL-2 published before migration 0004, without `content`, and the verified loader refuses them, as intended. Rebuilding `pintae_dev` (drop and recreate its schema, then `make dev`) was not permitted in this session and is left to the lead |
+
+Residual, by design: a superuser owner can still disable a trigger (DDL) or set `session_replication_role`; the test-suite cleanup does this for versions a test published. Documents changed: schema.md (reference-data lifecycle and guard, `calendar_versions.content`, `publications`), TRD.md section 7 (withdrawal), AGENTS.md (utilities index, `/readyz`) and this section.

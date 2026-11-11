@@ -107,6 +107,8 @@ def publish_rule_pack(
         if existing is not None:
             if existing.content_hash != digest:
                 raise PublicationRefused("content_changed_under_existing_code", pack.code)
+            if existing.status == "withdrawn":
+                raise PublicationRefused("version_withdrawn", pack.code)
             return existing.id  # idempotent on code and hash
         if not fixtures:
             raise PublicationRefused("no_fixture_suite")
@@ -173,6 +175,8 @@ def publish_calendar(
         if existing is not None:
             if existing.content_hash != digest:
                 raise PublicationRefused("content_changed_under_existing_code", cal.code)
+            if existing.status == "withdrawn":
+                raise PublicationRefused("version_withdrawn", cal.code)
             return existing.id
         if confirmed_hash != digest:
             raise PublicationRefused("confirmed_hash_differs")
@@ -186,6 +190,7 @@ def publish_calendar(
             status="published",
             content_hash=digest,
             published_at=now,
+            content=dict(data),
         )
         s.add(row)
         s.flush()
@@ -229,6 +234,31 @@ def publish_calendar(
             )
         )
         return row.id
+
+
+def withdraw(engine: Engine, object_type: str, code: str, vendor_user_id: uuid.UUID) -> uuid.UUID:
+    """Withdraw a published rule pack or calendar version: a status-only change (B1-012).
+
+    Withdrawn is terminal: content stays frozen, runs pinned to the version stay pinned and
+    keep loading it, and the code can never be published again. A correction is a new code.
+    """
+    tables = {"rule_pack": "rule_packs", "calendar_version": "calendar_versions"}
+    if object_type not in tables:
+        raise PublicationRefused("unknown_object_type", object_type)
+    table = tables[object_type]
+    with Session(engine) as s, s.begin():
+        _lock(s)
+        _publisher(s, vendor_user_id)
+        row = s.execute(
+            text(f"SELECT id, status FROM {table} WHERE code = :c FOR UPDATE"), {"c": code}
+        ).one_or_none()
+        if row is None:
+            raise PublicationRefused("not_found", code)
+        if row.status != "published":
+            raise PublicationRefused("not_published", row.status)
+        s.execute(text(f"UPDATE {table} SET status = 'withdrawn' WHERE id = :i"), {"i": row.id})
+        pid: uuid.UUID = row.id
+        return pid
 
 
 def ensure_publisher(engine: Engine, email: str) -> uuid.UUID:

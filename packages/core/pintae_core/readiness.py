@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Any
 
@@ -41,7 +41,7 @@ from pintae_rules import engine as rules_engine
 from pintae_rules import status as st
 from pintae_rules.calendar import Calendar, DeadlineView, calendar_from_data, deadline_view
 from pintae_rules.dates import dubai_date
-from pintae_rules.packs import PackRef, RulePack, pack_from_data, select_current
+from pintae_rules.packs import PackRef, RulePack, content_hash, pack_from_data, select_current
 
 DATASETS = ("customers", "items", "invoices")
 PROFILE_FIELDS = {
@@ -103,6 +103,13 @@ def canonical_hash(data: Any) -> bytes:
 # ----------------------------------------------------------------------------- reference
 
 
+def load_pack(row: RulePackRow) -> RulePack:
+    """The one way to read a stored pack: recompute the hash of the frozen content (B1-012)."""
+    if content_hash(row.content) != row.content_hash or row.content.get("code") != row.code:
+        raise DomainError(500, "rule_pack_content_hash_mismatch", {"code": row.code})
+    return pack_from_data(row.content)
+
+
 def current_pack(s: Session, today: date) -> tuple[RulePackRow, RulePack]:
     rows = s.execute(select(RulePackRow).where(RulePackRow.status == "published")).scalars().all()
     refs = [
@@ -117,7 +124,7 @@ def current_pack(s: Session, today: date) -> tuple[RulePackRow, RulePack]:
     if chosen is None:
         raise DomainError(503, "no_rule_pack_in_force")
     row = next(r for r in rows if r.code == chosen.code)
-    return row, pack_from_data(row.content)
+    return row, load_pack(row)
 
 
 def current_calendar(s: Session) -> Calendar:
@@ -180,7 +187,22 @@ def _calendar(s: Session, row: CalendarVersion) -> Calendar:
             for p in provs
         ],
     }
-    return calendar_from_data(data)
+    # B1-012: the calendar is read from its hashed, frozen content; the child rows must agree.
+    content = row.content
+    if (
+        content is None
+        or content_hash(content) != row.content_hash
+        or content.get("code") != row.code
+    ):
+        raise DomainError(500, "calendar_content_hash_mismatch", {"code": row.code})
+    cal = calendar_from_data(content)
+    if _sorted_provisions(cal) != _sorted_provisions(calendar_from_data(data)):
+        raise DomainError(500, "calendar_rows_differ_from_content", {"code": row.code})
+    return cal
+
+
+def _sorted_provisions(cal: Calendar) -> Calendar:
+    return replace(cal, provisions=tuple(sorted(cal.provisions, key=lambda p: p.code)))
 
 
 # ----------------------------------------------------------------------------- entity facts
@@ -407,7 +429,7 @@ def execute_run(
     ent = get_entity(s, run.entity_id)
     pack_row = s.get(RulePackRow, run.rule_pack_id)
     assert pack_row is not None
-    pack = pack_from_data(pack_row.content)
+    pack = load_pack(pack_row)
     seg = s.get(SegmentAssessment, run.segment_assessment_id)
     datasets: dict[str, rules_engine.DatasetInput | None] = dict.fromkeys(DATASETS)
     mapping_versions = run.inputs["mapping_versions"]
@@ -533,7 +555,7 @@ def refresh_snapshot(
     ent = get_entity(s, run.entity_id)
     pack_row = s.get(RulePackRow, run.rule_pack_id)
     assert pack_row is not None
-    frozen = {r.code: r.severity for r in pack_from_data(pack_row.content).rules}
+    frozen = {r.code: r.severity for r in load_pack(pack_row).rules}
     # B1-012: severity comes from the hashed, frozen pack content, never the child row.
     sev = {
         r.id: frozen[r.code]

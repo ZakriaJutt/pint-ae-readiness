@@ -20,7 +20,7 @@ from sqlalchemy import Engine, text
 from sqlalchemy.exc import IntegrityError
 
 from pintae_api import routes
-from pintae_core import audit, tenancy
+from pintae_core import audit, readiness, tenancy
 from pintae_core.config import get_settings
 from pintae_core.db import app_engine
 from pintae_core.idempotency import IdempotencyConflict
@@ -150,6 +150,15 @@ def readiness_checks(engine: Engine, store: ObjectStore) -> dict[str, str]:
         {"s": max_age},
         lambda v: "ok" if v else "no heartbeat",
     )
+    try:  # B1-012: the reference data in force loads and matches its content hash
+        with tenancy.reference_session(engine) as s:
+            readiness.current_calendar(s)
+            readiness.current_pack(s, readiness.now_dubai_date(utc_now()))
+        checks["reference_data"] = "ok"
+    except DomainError as exc:
+        checks["reference_data"] = f"failed ({exc.reason})"
+    except Exception as exc:
+        checks["reference_data"] = f"failed ({type(exc).__name__})"
     checks["storage"] = "ok" if store.writable() else "not writable"
     return checks
 
