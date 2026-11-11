@@ -353,6 +353,53 @@ Reviewer's script `_coordination/review/pint-ae-readiness-b1-round3_adversarial.
 
 Residual, by design: a superuser owner can still disable a trigger (DDL) or set `session_replication_role`; the test-suite cleanup does this for versions a test published. Documents changed: schema.md (reference-data lifecycle and guard, `calendar_versions.content`, `publications`), TRD.md section 7 (withdrawal), AGENTS.md (utilities index, `/readyz`) and this section.
 
+### 9.4 Retest round 4 (2026-11-11) and the fix after it
+
+Reviewer's round-4 verdicts, copied unchanged from `_coordination/review/pint-ae-readiness-b1-verdicts.json`:
+
+| ID | Reviewer verdict (round 4) |
+|---|---|
+| B1-001 | Closed |
+| B1-002 | Closed |
+| B1-003 | Closed |
+| B1-004 | Closed |
+| B1-005 | Closed |
+| B1-006 | Closed |
+| B1-007 | Closed |
+| B1-008 | Closed |
+| B1-009 | Closed |
+| B1-010 | Closed |
+| B1-011 | Closed |
+| B1-012 | Closed |
+| B1-013 | Closed |
+| B1-014 | New (major, regression): migration 0004 adds calendar_versions.content as NULL for calendars published before 0004 and the new guard forbids backfilling it; an upgraded database (pintae_dev included) fails reference_data with calendar_content_hash_mismatch, entity GET and run POST return 500, and re-publishing the same code does not repair it |
+| B2-001 | New (major, feat/b2-local-auth 77bbadd): using a recovery code clears totp_confirmed_at and replaces the TOTP secret before re-enrolment is confirmed; if re-enrolment is abandoned, the password alone or the reset link alone reaches a full session with an attacker-bound authenticator |
+
+Fix made after the round-4 retest, not yet re-reviewed (B2-001 is fixed on `feat/b2-local-auth`, section 10.1 there):
+
+| ID | State | Fix | Regression tests |
+|---|---|---|---|
+| B1-014 | **Fixed after round-4 retest, awaiting recheck** | Migration 0004b (after 0004, so a database already at 0004 is repaired too) adds `calendar_versions.content_origin` and fills `content` once, only where it is NULL, idempotently and resumably, from the version's own child rows (`pintae_core.calendar_content.derive_missing_content`). The shipped file is used when it hashes to the stored `content_hash` and describes exactly those rows (`publication`, hash unchanged); otherwise the rows are rebuilt and hashed (`derived_from_rows`). The guard on `calendar_versions` is suspended for that transaction only; schema.md records why this data step is allowed. A version whose rows are not a valid, sourced calendar becomes `legacy_unverified`: `current_calendar` skips it, so no run newly pins it; results pinned to it read Stale with reason `calendar_legacy_unverified`; loading it returns 409, never 500. The loader's row rebuild is now the same function | `integration/test_calendar_backfill.py`: `test_backfill_uses_the_published_file_when_it_matches_hash_and_rows`, `test_backfill_derives_content_from_rows_when_the_file_differs`, `test_unverifiable_calendar_is_legacy_never_pinned_and_pinned_results_read_stale` |
+
+Reviewer's scripts after the fix:
+- `pint-ae-readiness-b1-round4_upgrade.sh`, run from a scratch copy with this branch's head (63a0cc4) in place of 2cbce9d and the B2 head (9e6d36c) in place of 77bbadd; the script itself is unchanged.
+  - U1: a database built and seeded at pushed 63623c4 (0003) and then upgraded reports `reference_data: ok`, and CAL-1 and CAL-2 have content. The re-publish step returns the existing id. Its "backfill UPDATE" now writes content identical to what is stored, so the guard sees no change.
+  - U2 and U3: the upgraded schema equals the fresh schema, including ACLs.
+  - U4: fails at `invites` as before. This is the reviewer's demonstration that the old 0001 cannot build B2.
+  - U5: the 0001 SQL is identical.
+- `pint-ae-readiness-b1-round4_adversarial.py` together with the earlier scripts: 51 passed.
+- `pintae_dev` was upgraded in place on `feat/b2-local-auth`, without dropping anything. Its migration 0006 repeats the same idempotent step, because 0005 was applied there before 0004b existed. CAL-1 and CAL-2 became `publication`, and `make dev-check` is ready in 1.1 s.
+
+| Command (this branch, rebuilt `pintae_test`) | Result |
+|---|---|
+| `make test` | 158 passed, 0 failed (77 unit, 81 integration) |
+| `make lint` | Pass, 60 files |
+| `make typecheck` (60 files) | Pass, 0 errors |
+| `make arch` | Pass, 0 violations |
+| `make parity` | Equal, single head 0004b |
+
+Documents changed: schema.md (`calendar_versions.content_origin`, the 0004b data step and why it is allowed), AGENTS.md (utilities index), this section.
+
 ## 10. B2 build record (2026-11-11): sign-in and local services without external accounts
 
 Owner request of 2026-11-11, branch `feat/b2-local-auth` from `feat/b1-foundation` at `2cbce9d` (the B1-012 round-3 fix, section 9.3). Synthetic data only; no provider account, no secret in git (`backend/.env` is gitignored; `backend/.env.example` holds names only).
@@ -387,3 +434,27 @@ Tests that ran (all against a freshly rebuilt `pintae_test`, Mailpit and MinIO r
 OWASP ASVS 5.0.0 [S: SRC-22], requirement IDs as selected in TRD 8.8 (status column there). Implemented in B2: 6.2.1; 6.3.1; 6.3.3; 6.3.6; 6.4.3; 6.5.1, 6.5.2, 6.5.3; 7.2.1, 7.2.3, 7.2.4; 7.3.1, 7.3.2; 7.4.1, 7.4.2; 3.3.1, 3.3.2, 3.3.4; 3.5.1; 4.1.1 (downloads); 8.2.1, 8.2.2, 8.3.1, 8.4.1 for users and invitations (3.4.1 and 3.4.3 were already in B1). Partial: 6.2.12 (offline common-password set, not a breach corpus); 6.4.4 (recovery (a) and (b) only). Not implemented: 13.3.1, 13.3.2 (no secret store); 4.1.3, 4.2.1 (no proxy); 5.4.3 (antivirus); 8.4.2 (vendor access); 16.x only in part (sign-in results are audited, log controls unchanged from B1). These are selected controls, not a claim of ASVS compliance.
 
 Document changes: TRD.md (5.1 rows and build note, 8.1 build detail, 8.8 statuses), schema.md (users, sessions, invites, recovery_codes, password_resets, files, new `auth_attempts`, sign-in functions, storage note), App-flow.md (S-02 activation signs in), AGENTS.md (state line, utilities index, commands, local environment), this section. Migration 0001 now carries its own frozen table lists instead of importing them from the models, so later tables (0005) do not change what 0001 does.
+
+### 10.1 B2 fix after review round 4 (2026-11-11)
+
+The round-4 verdicts are copied in section 9.4. Fix made after the round-4 retest, not yet re-reviewed:
+
+| ID | State | Fix | Regression tests |
+|---|---|---|---|
+| B2-001 | **Fixed after round-4 retest, awaiting recheck** | A recovery code now gives only a restricted `enrol` session. Its sole permitted action is confirming a new TOTP secret, which is held in `users.totp_pending_secret_enc` (migration 0007). The confirmed secret, `totp_confirmed_at` and the other recovery codes stay valid until that confirmation. Confirming swaps the secret in, reissues the recovery codes and ends the sessions started under the old factor. `password_step` and `complete_reset` never create an `enrol` session: an account with no confirmed TOTP gets 403 `totp_enrolment_required` and no session, and the reset link is not used up. The fresh proof for enrolment is the recovery code itself or an Owner-issued invitation: the first invitation, or `POST /users/{id}/reset` (S-15, TRD 8.1 (c)). That reset ends the user's sessions, makes the password unusable and e-mails a new invitation tied to the user (`invites.user_id`). Accepting it sets a new password and requires TOTP enrolment in that same flow. An Owner cannot reset themself (409), and only an Owner can reset (403) | `integration/test_b2_sign_in.py`: `test_b2_001_abandoned_reenrolment_keeps_the_old_factor` (password-only path), `test_b2_001_reset_link_after_abandoned_reenrolment_still_needs_the_old_totp` (mailbox-only path), `test_b2_001_confirming_the_new_factor_replaces_the_old_one`, `test_b2_001_unenrolled_account_needs_an_owner_reset`, `test_b2_001_owner_reset_ends_sessions_of_an_enrolled_user` (IT-18 Owner reset); IT-02 includes the reset route |
+
+Reviewer's scripts at this branch's head:
+- `pint-ae-readiness-b2-round4_security.py`: 7 passed, S3b included. After the abandoned re-enrolment, the old authenticator still works. The password alone gives stage `password`, and the reset link gives stage `password`; neither path reaches a full session.
+- `pint-ae-readiness-b1-round4_adversarial.py` together with the earlier scripts: 51 passed.
+- The upgrade script: see section 9.4.
+
+| Command (this branch, rebuilt `pintae_test`) | Result |
+|---|---|
+| `make test` | 195 passed, 0 failed (92 unit, 103 integration) |
+| `make lint` | Pass, 71 files |
+| `make typecheck` (71 files) | Pass, 0 errors |
+| `make arch` | Pass, 0 violations |
+| `make parity` | Equal, single head 0007 |
+| `make dev-check` on `pintae_dev`, upgraded in place from 0005 (0006 repaired CAL-1 and CAL-2; 0007 added the B2-001 columns) | Ready in about 1 s |
+
+The `make dev-check` row in section 10 ("Not ready … reference_data") is superseded by this result. Documents changed: TRD.md (8.1 detail, 5.1 build note, 6.4.4 status), schema.md (`users.totp_pending_secret_enc`, `invites.user_id`), this section.
