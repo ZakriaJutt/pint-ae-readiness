@@ -153,6 +153,9 @@ def readiness_checks(engine: Engine, store: ObjectStore) -> dict[str, str]:
     try:  # B1-012: the reference data in force loads and matches its content hash
         with tenancy.reference_session(engine) as s:
             readiness.current_calendar(s)
+            unverified = readiness.newest_calendar_unverified(s)
+            if unverified is not None:
+                raise DomainError(503, f"newest_calendar_unverified:{unverified}")
             readiness.current_pack(s, readiness.now_dubai_date(utc_now()))
         checks["reference_data"] = "ok"
     except DomainError as exc:

@@ -13,10 +13,10 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.orm import Session
 
-from pintae_core.calendar_content import calendar_rows_data, same_calendar
+from pintae_core.calendar_content import UNVERIFIED, calendar_rows_data, same_calendar
 from pintae_core.models import (
     AspStatus,
     CalendarVersion,
@@ -136,7 +136,10 @@ def current_calendar(s: Session) -> Calendar:
         select(CalendarVersion)
         .where(
             CalendarVersion.status == "published",
-            CalendarVersion.content_origin.is_distinct_from(LEGACY),
+            or_(
+                CalendarVersion.content_origin.is_(None),
+                CalendarVersion.content_origin.not_in(UNVERIFIED),
+            ),
         )
         .order_by(CalendarVersion.published_at.desc())
         .limit(1)
@@ -156,17 +159,29 @@ def calendar_by_code(s: Session, code: str) -> Calendar:
     return _calendar(s, row)
 
 
+def newest_calendar_unverified(s: Session) -> str | None:
+    """The code of the newest published calendar when its content is unverified (B1-015):
+    reads fall back to an older verified version, and /readyz says so by name."""
+    row = s.execute(
+        select(CalendarVersion.code, CalendarVersion.content_origin)
+        .where(CalendarVersion.status == "published")
+        .order_by(CalendarVersion.published_at.desc())
+        .limit(1)
+    ).first()
+    return row.code if row is not None and row.content_origin in UNVERIFIED else None
+
+
 def calendar_is_legacy(s: Session, code: str | None) -> bool:
     if code is None:
         return False
     origin = s.execute(
         select(CalendarVersion.content_origin).where(CalendarVersion.code == code)
     ).scalar_one_or_none()
-    return origin == LEGACY
+    return origin in UNVERIFIED
 
 
 def _calendar(s: Session, row: CalendarVersion) -> Calendar:
-    if row.content_origin == LEGACY:
+    if row.content_origin in UNVERIFIED:
         raise DomainError(409, "calendar_legacy_unverified", {"code": row.code})
     data = calendar_rows_data(s, row.id, row.code, row.basis, row.source_refs)
     # B1-012: the calendar is read from its hashed, frozen content; the child rows must agree.
