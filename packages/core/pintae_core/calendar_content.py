@@ -6,16 +6,20 @@
 migration 0004, which added the column (B1-014). It is called only from migrations, writes
 only rows whose ``content`` is NULL, and is idempotent and resumable.
 
-For each such row:
-- ``publication``: the shipped calendar file with the same code hashes to the stored
-  ``content_hash`` and describes exactly the stored rows; it becomes the content, and the
-  hash is unchanged.
-- ``derived_from_rows``: otherwise the rows (which is what every read used before 0004)
-  form a valid calendar whose every rule cites a source; the rebuilt data becomes the
-  content and its hash the ``content_hash``. The ``publications`` row keeps the hash that
-  was confirmed at publication.
-- ``legacy_unverified``: neither holds. ``content`` stays NULL; no run can newly pin the
-  version, and results pinned to it read as Stale (``calendar_legacy_unverified``).
+For each such row (B1-015: the database's own rows cannot vouch for themselves):
+- ``publication``: the calendar file shipped in the repository for that version code is the
+  one the version was published from (its ``content_hash`` equals both the stored hash and
+  the ``publications`` row) and the calendar rebuilt from the stored rows is identical to it
+  in canonical form and hash. The file becomes the content; the hash is unchanged.
+- ``legacy_unverified``: anything else (no shipped file, a different hash, or rows that
+  differ, for example a deadline or provision edited before 0004). ``content`` stays NULL;
+  no run newly pins the version, results pinned to it read Stale
+  (``calendar_legacy_unverified``), loading it returns 409, and an operator publishes a new
+  version from the shipped definition. Rule packs never needed this: ``rule_packs.content``
+  has been NOT NULL and hashed since migration 0001.
+
+``derived_from_rows`` was produced by an earlier draft of this step (B1-015); loaders treat
+any such row as ``legacy_unverified``, and this step no longer produces it.
 """
 
 from __future__ import annotations
@@ -30,6 +34,8 @@ from pintae_rules.calendar import Calendar, calendar_from_data
 from pintae_rules.packs import content_hash
 
 ORIGINS = ("publication", "derived_from_rows", "legacy_unverified")
+# Origins a loader refuses to serve (B1-015).
+UNVERIFIED = frozenset({"derived_from_rows", "legacy_unverified"})
 
 
 def _iso(v: Any) -> str | None:
@@ -104,26 +110,60 @@ def _shipped(code: str) -> dict[str, Any] | None:
         return None
 
 
+def canonical_calendar(data: dict[str, Any]) -> dict[str, Any]:
+    """One canonical form for a calendar, whatever extra keys a file carries: the fields the
+    application reads, provisions in code order."""
+    cal = calendar_from_data(data)
+    return {
+        "code": cal.code,
+        "basis": cal.basis,
+        "source_refs": list(cal.source_refs),
+        "rules": [
+            {
+                "segment": r.segment,
+                "deadline_basis": r.deadline_basis,
+                "appoint_by": _iso(r.appoint_by),
+                "implement_by": _iso(r.implement_by),
+                "candidate_segments": list(r.candidate_segments),
+                "source_refs": list(r.source_refs),
+                "note": r.note,
+                "discrepancy": r.discrepancy,
+            }
+            for _, r in sorted(cal.rules.items())
+        ],
+        "provisions": [
+            {
+                "code": p.code,
+                "kind": p.kind,
+                "applies_from": _iso(p.applies_from),
+                "applies_to": _iso(p.applies_to),
+                "selector": dict(p.selector),
+                "effect": p.effect,
+                "rule_code": p.rule_code,
+                "source_refs": list(p.source_refs),
+            }
+            for p in sorted(cal.provisions, key=lambda p: p.code)
+        ],
+    }
+
+
 def classify(
-    rows_data: dict[str, Any], stored_hash: bytes
+    rows_data: dict[str, Any], stored_hash: bytes, published_hashes: set[bytes]
 ) -> tuple[str, dict[str, Any] | None, bytes]:
     """(origin, content, content_hash) for one calendar version whose content is NULL."""
+    shipped = _shipped(rows_data["code"])
+    if shipped is None:
+        return "legacy_unverified", None, stored_hash
+    digest = content_hash(shipped)
+    if digest != stored_hash or (published_hashes and published_hashes != {digest}):
+        return "legacy_unverified", None, stored_hash
     try:
-        rows_cal = calendar_from_data(rows_data)
+        rows_form, shipped_form = canonical_calendar(rows_data), canonical_calendar(shipped)
     except (KeyError, TypeError, ValueError):
         return "legacy_unverified", None, stored_hash
-    if not rows_data["rules"]:
+    if content_hash(rows_form) != content_hash(shipped_form):
         return "legacy_unverified", None, stored_hash
-    shipped = _shipped(rows_data["code"])
-    if shipped is not None and content_hash(shipped) == stored_hash:
-        try:
-            if same_calendar(calendar_from_data(shipped), rows_cal):
-                return "publication", shipped, stored_hash
-        except (KeyError, TypeError, ValueError):
-            pass
-    if all(r.source_refs for r in rows_cal.rules.values()):
-        return "derived_from_rows", rows_data, content_hash(rows_data)
-    return "legacy_unverified", None, stored_hash
+    return "publication", shipped, stored_hash
 
 
 def derive_missing_content(conn: Any) -> dict[str, str]:
@@ -138,7 +178,17 @@ def derive_missing_content(conn: Any) -> dict[str, str]:
     ).all()
     for r in rows:
         data = calendar_rows_data(conn, r.id, r.code, r.basis, r.source_refs)
-        origin, content, digest = classify(data, bytes(r.content_hash))
+        published = {
+            bytes(h)
+            for h in conn.execute(
+                text(
+                    "SELECT content_hash FROM publications"
+                    " WHERE object_type = 'calendar_version' AND object_id = :i"
+                ),
+                {"i": r.id},
+            ).scalars()
+        }
+        origin, content, digest = classify(data, bytes(r.content_hash), published)
         conn.execute(
             text(
                 "UPDATE calendar_versions SET content = CAST(:c AS jsonb), content_hash = :h,"
