@@ -141,13 +141,13 @@ sequenceDiagram
   A->>D: read snapshot pins, current versions, today's date
   A-->>R: Stale (derived on read), deadlines from the current calendar
   R->>A: approve a report with pins RP-1
-  A->>D: compare pins with current versions FOR SHARE
+  A->>D: shared versions lock and entity row lock, then compare pins with current versions
   A-->>R: 409 Stale: re-run required
   R->>A: GET approved report made under RP-1
   A-->>R: Superseded (derived on read); listed under Reports to re-issue
 ```
 
-Staleness never depends on a job. The status function receives the stored result, the current published versions and today's date, and returns the effective status on every read (AD-11). The `notify_stale` job only writes audit events and the "Reports to re-issue" notice; if it fails, every screen and the report lookup are still correct, and an alert fires on the failed job (IT-17). The same derivation covers a changed segment version, mapping version or seller-profile version and data older than 45 days. A new calendar version is different: results hold no dates, so nothing becomes Stale; displayed dates change at once and reports that pinned the old calendar read as Superseded.
+Staleness never depends on a job. The status function receives the stored result, the current published versions and today's date, and returns the effective status on every read (AD-11). The `notify_stale` job only writes audit events and the "Reports to re-issue" notice; if it fails, every screen and the report lookup are still correct, and an alert fires on the failed job (IT-17). The same derivation covers a changed segment version, mapping version or seller-profile version and data older than 45 days. A new calendar version also makes results Stale, because a run applies the calendar's provisions (PRV-2) and pins the calendar version it used; displayed dates change at once and reports that pinned the old calendar read as Superseded (B1 review B1-001). A newer upload makes the result Stale from the moment it is received, before the worker parses it (B1-005). Approval serialises against version changes: it takes a shared advisory lock that publication takes exclusively, and the entity row lock that every change to a pinned version takes, then compares pins (B1-009).
 
 What the product cannot reach: a PDF already sent to a client. Each report therefore carries a reference code and the sentence in MH-11; the firm checks the code on S-12, which shows Current or Superseded. The firm, not the product, re-issues.
 
@@ -156,7 +156,7 @@ What the product cannot reach: a PDF already sent to a client. Each report there
 | Job | Trigger | Timeout | Retries | Idempotency |
 |---|---|---|---|---|
 | `parse_upload` | Upload accepted | 5 min | 3, backoff 30 s, 2 min, 10 min | Upload unique on (firm, entity, dataset, sha256) |
-| `run_checks` | User or cycle | 10 min | 2 | Run unique on (entity, pack, segment version, mapping versions, seller-profile version, dataset hashes); the calendar is not part of a run; findings replaced inside the run's transaction |
+| `run_checks` | User or cycle | 10 min | 2 | Run unique on (entity, pack, segment version, mapping versions, seller-profile version, calendar version, dataset hashes); the calendar version is part of the input hash, so a new calendar gives a new run; findings replaced inside the run's transaction |
 | `render_report`, `build_export`, `build_handoff` | User | 5 min | 3 | Output keyed by content hash |
 | `notify_stale` | Publication, segment or mapping change; daily for the 45-day rule | 5 min | 5 | Writes notices and audit events only; repeatable; status never depends on it |
 | `sweep_expired`, `delete_entity` | Schedule, Owner | 10 min | 5 | Deletes by key; repeatable |
