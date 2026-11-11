@@ -222,3 +222,49 @@ def test_calendar_and_upload_changes_are_stale_reasons() -> None:
     assert effective_status(
         Status.DATA_READY, v1, Versions("RP-1", 1, {}, 1, "CAL-2", {"invoices": "u2"}), TODAY, TODAY
     ) == (Status.STALE, ["upload_changed"])
+
+
+# Round 2 ---------------------------------------------------------------------------------
+
+
+def _gov(**kw: str | None) -> dict[str, str | None]:
+    return customer(
+        buyer_class="government",
+        trn=None,
+        tin=None,
+        legal_reg_type=None,
+        legal_reg_id=None,
+        legal_reg_authority=None,
+        **kw,
+    )
+
+
+def test_b1_013_government_buyer_without_tin_is_checked_with_endpoint_absent_or_empty() -> None:
+    c = clean_case()
+    c["datasets"]["customers"]["rows"] = [_gov()]
+    c["datasets"]["customers"]["fields"] = {"endpoint_id": "absent"}
+    assert run_case(c).outcome("RC-08", "C1", "customers") == "fail"
+    c["datasets"]["customers"]["fields"] = {}
+    c["datasets"]["customers"]["rows"] = [_gov(endpoint_id=None)]
+    assert run_case(c).outcome("RC-08", "C1", "customers") == "fail"
+    c["datasets"]["customers"]["rows"] = [_gov(endpoint_id="0235:GOV-ADDRESS")]
+    assert run_case(c).outcome("RC-08", "C1", "customers") == "fail"
+    # A TIN-based endpoint does not need IBT-047 (IBR-149-AE).
+    c["datasets"]["customers"]["rows"] = [_gov(endpoint_id="1002345678")]
+    assert run_case(c).outcome("RC-08", "C1", "customers") is None
+    # With the registration given, the check passes.
+    c["datasets"]["customers"]["rows"] = [
+        customer(buyer_class="government", trn=None, tin=None, endpoint_id=None)
+    ]
+    assert run_case(c).outcome("RC-08", "C1", "customers") == "pass"
+
+
+def test_seg_n_invoices_already_dated_is_flagged_passed() -> None:
+    v = deadline_view(
+        cal(), "SEG-N", TODAY, first_invoice_state="not_yet", earliest_invoice_on=date(2026, 10, 1)
+    )
+    assert v.appoint_by_passed and v.flags == ("invoices_dated_before_today",)
+    v = deadline_view(
+        cal(), "SEG-N", TODAY, first_invoice_state="not_yet", earliest_invoice_on=date(2026, 12, 1)
+    )
+    assert not v.appoint_by_passed and v.display == "Before first invoice"

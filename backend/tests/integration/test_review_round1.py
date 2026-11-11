@@ -237,3 +237,91 @@ def test_country_value_mapping_kind_is_accepted(env: Env) -> None:
 def test_application_role_cannot_read_vendor_credentials(env: Env) -> None:
     with pytest.raises(DBAPIError, match="permission denied"), env.app.connect() as conn:
         conn.execute(text("SELECT password_hash FROM vendor_users"))
+
+
+# ----------------------------------------------------------------------------- round 2
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "UPDATE rules SET severity = 'warning' WHERE code = 'RC-17'",
+        "DELETE FROM rules WHERE code = 'RC-17'",
+        "UPDATE provisions SET applies_to = '2026-12-31' WHERE code = 'PRV-2'",
+        "UPDATE calendar_rules SET appoint_by = '2027-12-31' WHERE segment = 'SEG-L'",
+        "INSERT INTO rules (rule_pack_id, code, severity, applies_to, source_refs, description) "
+        "SELECT id, 'RC-99', 'warning', '{}', '{}', 'x' FROM rule_packs WHERE code = 'RP-1'",
+    ],
+)
+def test_b1_012_published_children_are_immutable_even_for_owner(env: Env, sql: str) -> None:
+    with pytest.raises(DBAPIError, match="immutable"), env.admin.begin() as conn:
+        conn.execute(text(sql))
+
+
+def test_b1_012_n5_severity_edit_cannot_produce_data_ready(env: Env) -> None:
+    with pytest.raises(DBAPIError), env.admin.begin() as conn:
+        conn.execute(text("UPDATE rules SET severity = 'warning' WHERE code = 'RC-17'"))
+    firm = env.firm()
+    eid = flow.new_entity(env, firm)
+    files = flow.clean_files()
+    inv: list[Sequence[object]] = [
+        fx.INVOICE_HEADERS,
+        [
+            "INV-1",
+            "2026-10-01",
+            "2026-10-31",
+            "380",
+            "C001",
+            "AED",
+            None,
+            "30",
+            "I001",
+            "2000",
+            "H87",
+            "5.00",
+            "10000.00",
+            "S",
+            "5",
+            "10000.00",
+            "500.00",
+            "99999.00",
+            "00000000",
+            None,
+            None,
+        ],
+    ]
+    files["invoices"] = ("invoices.csv", fx.csv_bytes(inv))
+    ids = flow.upload_all(env, firm, eid, files)
+    flow.confirm_mappings(env, firm, ids)
+    flow.run(env, firm, eid)
+    _, res = flow.draft_and_approve(env, firm, eid)
+    assert flow.status(env, firm, eid)["status"] == "gaps_open"
+    assert res.json()["printed_status"] == "Gaps open"
+
+
+def test_b1_010_seg_n_with_past_invoice_dates_is_flagged(env: Env) -> None:
+    firm = env.firm()
+    r = env.client.post("/api/v1/entities", headers=firm.h(), json={"legal_name": "New Co"})
+    eid = r.json()["id"]
+    env.client.patch(f"/api/v1/entities/{eid}", headers=firm.h(), json=flow.CLEAN_PROFILE)
+    seg = env.client.post(
+        f"/api/v1/entities/{eid}/segment-assessments",
+        headers=firm.h(),
+        json={
+            "entity_type": "person",
+            "revenue_band": "lt_50m",
+            "newly_established": True,
+            "first_invoice_state": "not_yet",
+        },
+    ).json()
+    env.client.post(
+        f"/api/v1/segment-assessments/{seg['id']}/decision",
+        headers=firm.h("reviewer"),
+        json={"decision": "approve"},
+    )
+    assert flow.status(env, firm, eid)["deadline"]["display"] == "Before first invoice"
+    ids = flow.upload_all(env, firm, eid, flow.clean_files())  # invoices dated 2026-10-01
+    flow.confirm_mappings(env, firm, ids)
+    flow.run(env, firm, eid)
+    d = flow.status(env, firm, eid)["deadline"]
+    assert d["appoint_by_passed"] is True and d["flags"] == ["invoices_dated_before_today"]

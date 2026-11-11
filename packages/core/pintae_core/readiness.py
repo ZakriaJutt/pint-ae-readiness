@@ -462,7 +462,14 @@ def execute_run(
     for rec in result.records:
         if rec.dataset in records:
             records[rec.dataset] += 1
-    run.inputs = {**run.inputs, "in_scope_at_run": in_scope, "records_at_run": records}
+    run.inputs = {
+        **run.inputs,
+        "in_scope_at_run": in_scope,
+        "records_at_run": records,
+        "earliest_invoice_on": (
+            result.earliest_invoice_on.isoformat() if result.earliest_invoice_on else None
+        ),
+    }
     run.result_hash = bytes.fromhex(result.result_hash)
     run.state = "succeeded"
     run.finished_at = func.now()
@@ -524,8 +531,12 @@ def refresh_snapshot(
     ).scalar_one()
     assert run is not None
     ent = get_entity(s, run.entity_id)
+    pack_row = s.get(RulePackRow, run.rule_pack_id)
+    assert pack_row is not None
+    frozen = {r.code: r.severity for r in pack_from_data(pack_row.content).rules}
+    # B1-012: severity comes from the hashed, frozen pack content, never the child row.
     sev = {
-        r.id: r.severity
+        r.id: frozen[r.code]
         for r in s.execute(
             select(RuleRow).where(RuleRow.rule_pack_id == run.rule_pack_id)
         ).scalars()
@@ -612,6 +623,14 @@ class EntityStatusView:
     run_id: uuid.UUID | None
 
 
+def _earliest_invoice(s: Session, snap: ReadinessSnapshot | None) -> date | None:
+    if snap is None:
+        return None
+    run = s.get(CheckRun, snap.run_id)
+    raw = run.inputs.get("earliest_invoice_on") if run else None
+    return date.fromisoformat(raw) if raw else None
+
+
 def read_status(s: Session, ent: ClientEntity, today: date, calendar: Calendar) -> EntityStatusView:
     """Effective status derived on read (AD-11): no stored stale flag, no job involved."""
     state = entity_state(s, ent)
@@ -626,6 +645,7 @@ def read_status(s: Session, ent: ClientEntity, today: date, calendar: Calendar) 
         first_invoice_state=(seg.first_invoice_state if seg else None),
         first_invoice_on=(seg.first_invoice_on if seg else None),
         revenue_band=band_source.revenue_band if band_source else None,
+        earliest_invoice_on=_earliest_invoice(s, snap),
     )
     asp = (
         s.execute(

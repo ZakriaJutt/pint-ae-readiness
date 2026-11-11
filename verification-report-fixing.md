@@ -271,3 +271,45 @@ RP-1 was corrected under the same code. It had been published only to the local 
 | `make dev-check` | Ready in 1.1 s |
 
 Documents changed in round 1: PRD.md (section 5 calendar, upload and empty-dataset staleness and the 45-day basis; MH-08; MH-12; RC-04, RC-06, RC-07, RC-08 and RC-19 rewritten; RC-21 and RC-22 added; gap note for MF 22–23, 34, 39 and 48–49), TRD.md (section 6.2 diagram and text, section 6.3 `run_checks` row), schema.md (`revenue_band`, `value_mappings.kind`, `check_runs.inputs`, `readiness_snapshots.empty_datasets` and its CHECK, the staleness derivation, the index citations, the `vendor_users` grant), Decision.md (a second recorded conflict in section 3; SRC-24 in section 13, opened by the reviewer on 2026-11-11 and not by the author), App-flow.md (S-06 band choices and SEG-N display), and this file (the citations and this section). These edits have not been re-reviewed.
+
+
+### 9.2 Retest round 2 (2026-11-11) and the fixes after it
+
+Reviewer's round-2 verdicts, copied unchanged from `_coordination/review/pint-ae-readiness-b1-verdicts.json`:
+
+| ID | Reviewer verdict (round 2) |
+|---|---|
+| B1-001 | Closed |
+| B1-002 | Closed |
+| B1-003 | Closed |
+| B1-004 | Closed |
+| B1-005 | Closed |
+| B1-006 | Closed |
+| B1-007 | Closed |
+| B1-008 | Closed |
+| B1-009 | Closed |
+| B1-010 | Closed, part open: uploaded invoice dates in the past do not flip SEG-N to Passed when the state is not_yet (disclosed) |
+| B1-011 | Closed |
+| B1-012 | Open (new, major): rules, calendar_rules and provisions have no immutability trigger and the status function reads severity and calendar data from them; an owner-role edit of RC-17 severity gave Data-ready on a wrong invoice total (N5) |
+| B1-013 | Open (new, major): RC-08 does not apply when the buyer endpoint is absent or empty; a government buyer with no TIN and no legal registration passes, against IBR-149-AE (N4, the former A3) |
+
+Fixes made after the round-2 retest, not yet re-reviewed. Each row is **fixed after retest**:
+
+| ID | State | Fix | Regression tests |
+|---|---|---|---|
+| B1-012 | Fixed after retest | Migration 0003 adds trigger `pintae_published_child_immutable` on `rules`, `calendar_rules` and `provisions`. Once the parent pack or calendar is published or withdrawn, UPDATE and DELETE are refused, for the owner role too. INSERT is accepted only inside the publishing transaction. The status function also takes severity from the frozen, hashed `rule_packs.content`, not the child row. A change needs a new pack or calendar version | `integration/test_review_round1.py::test_b1_012_published_children_are_immutable_even_for_owner` (5 statements, including the owner edit of RC-17 severity) and `::test_b1_012_n5_severity_edit_cannot_produce_data_ready` |
+| B1-013 | Fixed after retest | RC-08 applies to a UAE buyer whose endpoint is not TIN-based (IBR-149-AE). When the endpoint is absent or empty, it applies to every UAE (or unresolved-country) business or government buyer without a TIN-shaped TRN or TIN, and that buyer is checked, never skipped | `unit/test_review_round1.py::test_b1_013_*` (absent, empty, non-TIN endpoint, TIN endpoint, registration present) |
+| B1-010 (open part) | Fixed after retest | Each run stores the earliest invoice issue date. An SEG-N entity whose uploaded invoices are dated on or before today shows "Passed: uploaded invoices are already dated" with flag `invoices_dated_before_today`, whatever state is recorded | `unit/...::test_seg_n_invoices_already_dated_is_flagged_passed`; `integration/...::test_b1_010_seg_n_with_past_invoice_dates_is_flagged` |
+
+The reviewer's updated cases were run after the fixes. N4 and N5 now fail their gap-asserting assertions, which is the intended change: N4 gives RC-08 `fail` with the endpoint absent and with it mapped but empty, and in N5 the owner-role UPDATE is refused. All other reviewer cases pass. `make test` was then rerun to rebuild `pintae_test`.
+
+| Command (after round 2, rebuilt `pintae_test` and `pintae_dev`) | Result |
+|---|---|
+| `make test` | 131 passed, 0 failed (77 unit, 54 integration) |
+| `make lint` | Pass, 57 files formatted |
+| `make typecheck` (57 files) | Pass, 0 errors |
+| `make arch` | Pass, 0 violations |
+| `make parity` | Equal, single head 0003 |
+| `make dev-check` | Ready in 1.0 s |
+
+Not changed, as the reviewer noted: the worker's `run_checks` does not take the entity lock, and the timing-based lock tests may be flaky under CI load. Documents changed in this round: PRD.md (RC-08 row cites IBR-149-AE), schema.md (`rules`, `calendar_rules`, `provisions` immutability), App-flow.md (S-06 SEG-N display) and this section.

@@ -143,6 +143,7 @@ def deadline_view(
     first_invoice_state: str | None = None,
     first_invoice_on: date | None = None,
     revenue_band: str | None = None,
+    earliest_invoice_on: date | None = None,
 ) -> DeadlineView:
     """Deadlines for a segment on ``today`` (a Dubai calendar date from ``dates.dubai_today``).
 
@@ -179,13 +180,26 @@ def deadline_view(
         # B1-010: an unknown first-invoice state shows its worst case: the date is needed
         # and the row sorts as overdue until the Reviewer records it.
         needs_date = first_invoice_on is None and first_invoice_state in (None, "unknown")
+        # B1-010: uploaded invoices dated on or before today show the entity has already
+        # issued invoices, whatever the recorded state: flagged and treated as passed.
+        already_invoicing = (
+            first_invoice_state != "issued"
+            and earliest_invoice_on is not None
+            and earliest_invoice_on <= today
+        )
         passed = (
             first_invoice_state == "issued"
             or (first_invoice_on is not None and first_invoice_on <= today)
             or needs_date
+            or already_invoicing
         )
-        if needs_date:
+        flags: tuple[str, ...] = ()
+        if already_invoicing:
+            display = "Passed: uploaded invoices are already dated"
+            flags = ("invoices_dated_before_today",)
+        elif needs_date:
             display = "First invoice date needed"
+            flags = ("first_invoice_date_needed",)
         else:
             display = "Passed" if passed else "Before first invoice"
         return DeadlineView(
@@ -201,7 +215,7 @@ def deadline_view(
             appoint_by_passed=passed,
             display=display,
             segment_confirmed=confirmed,
-            flags=("first_invoice_date_needed",) if needs_date else (),
+            flags=flags,
         )
 
     if rule.deadline_basis == "not_subject":

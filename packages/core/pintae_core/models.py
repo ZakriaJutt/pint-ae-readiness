@@ -40,7 +40,7 @@ NAMING = {
 
 
 # The migration head this code expects; /readyz compares it with alembic_version.
-SCHEMA_REVISION = "0002"
+SCHEMA_REVISION = "0003"
 
 
 class Base(DeclarativeBase):

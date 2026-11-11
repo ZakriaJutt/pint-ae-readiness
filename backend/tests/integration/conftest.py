@@ -81,6 +81,9 @@ def _clean_tenant_rows(request: pytest.FixtureRequest) -> None:
     eng: Engine = request.getfixturevalue("admin_engine")
     with eng.begin() as conn:
         conn.execute(text(f"TRUNCATE {', '.join(TENANT_TABLES)} CASCADE"))
+        # Test-only cleanup of reference versions a test published: the immutability
+        # triggers (B1-012) are bypassed for this owner-role transaction only.
+        conn.execute(text("SET LOCAL session_replication_role = replica"))
         conn.execute(
             text(
                 "DELETE FROM rules WHERE rule_pack_id IN (SELECT id FROM rule_packs WHERE code <> 'RP-1')"

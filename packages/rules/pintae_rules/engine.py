@@ -155,6 +155,7 @@ class EngineResult:
     findings: tuple[Finding, ...]
     results: tuple[RuleResult, ...]
     records: tuple[RecordScope, ...]
+    earliest_invoice_on: date | None = None  # earliest parseable invoice issue date (B1-010)
 
     def outcome(self, rule_code: str, record_key: str, dataset: str | None = None) -> str | None:
         def ds_ok(name: str) -> bool:
@@ -1104,21 +1105,45 @@ def _applies(
             return (True, rec.document_type_problem or VALUE_UNMAPPED)
         if rec.document_type not in doc_types:
             return (False, None)
-    if doc_types and rec.dataset == "customers":
-        # RC-08: buyers on commercial invoices or with a UAE endpoint.
-        endpoint = (
-            _clean(rec.first.values.get("endpoint_id"))
-            if ctx.has_field(rec, "endpoint_id")
-            else None
-        )
-        if rec.orig_key not in commercial_buyers and endpoint is None:
-            return (False, None)
+    if (
+        doc_types
+        and rec.dataset == "customers"
+        and rec.orig_key not in commercial_buyers
+        and not _needs_legal_registration(ctx, rec)
+    ):
+        return (False, None)
     if rec.dataset == "invoices" and rec.issue_date is not None:
         if rule.valid_from is not None and rec.issue_date < rule.valid_from:
             return (False, None)
         if rule.valid_to is not None and rec.issue_date > rule.valid_to:
             return (False, None)
     return (True, None)
+
+
+def _tin_shaped(ctx: Ctx, rec: Record, name: str, pattern: str) -> bool:
+    if not ctx.has_field(rec, name):
+        return False
+    v = _clean(rec.first.values.get(name))
+    return v is not None and ctx.matches(pattern, _digits(v))
+
+
+def _needs_legal_registration(ctx: Ctx, rec: Record) -> bool:
+    """IBR-149-AE: IBT-047 is required for a UAE-endpoint buyer whose electronic address is
+    not TIN-based (1XXXXXXXXX or 9XXXXXXXXX). B1-013: when the endpoint is absent or empty,
+    a UAE buyer without a TIN-shaped TRN or TIN is checked, never skipped."""
+    endpoint = (
+        _clean(rec.first.values.get("endpoint_id")) if ctx.has_field(rec, "endpoint_id") else None
+    )
+    if endpoint is not None:
+        return not re.fullmatch(r"[19][0-9]{9}", _digits(endpoint))
+    if _tin_shaped(ctx, rec, "trn", "trn") or _tin_shaped(ctx, rec, "tin", "tin"):
+        return False  # a TIN-based endpoint can be derived from the buyer's identifier
+    raw_country = (
+        _clean(rec.first.values.get("country_code")) if ctx.has_field(rec, "country_code") else None
+    )
+    status, country = ctx.country(raw_country)
+    # Unknown or unresolved country: conservative, the buyer may be a UAE buyer.
+    return status != "ok" or country == "AE"
 
 
 # --------------------------------------------------------------------------- run
@@ -1262,4 +1287,11 @@ def run(pack: RulePack, inp: EngineInput) -> EngineResult:
         unique.setdefault(f.fingerprint, f)
     results.sort(key=lambda r: (r.dataset, r.record_key, r.rule_code))
     scopes.sort(key=lambda s: (s.dataset, s.record_key))
-    return EngineResult(pack.code, tuple(unique.values()), tuple(results), tuple(scopes))
+    dates = [inv.issue_date for inv in by_ds["invoices"] if inv.issue_date is not None]
+    return EngineResult(
+        pack.code,
+        tuple(unique.values()),
+        tuple(results),
+        tuple(scopes),
+        min(dates) if dates else None,
+    )
