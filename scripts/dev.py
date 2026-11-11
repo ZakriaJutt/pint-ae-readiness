@@ -71,7 +71,7 @@ def main() -> int:
 
     try:
         pub = ensure_publisher(admin, "local-publisher@vendor.localhost")
-        for code in ("CAL-1", "CAL-2"):
+        for code in ("CAL-1", "CAL-2", "CAL-3"):  # C1: CAL-3 is current
             d = load_data(code)
             publish_calendar(admin, d, pub, content_hash(d))
         rp1 = load_data("RP-1")

@@ -78,7 +78,7 @@ Label every number as [C], [S: SRC-nn], [A] or [P] (Decision.md section 0). An a
 | Rule-pack golden-fixture runner | `packages/rules/pintae_rules/fixtures.py` |
 | File checks and parsers (.xlsx, .csv) | `packages/ingest/pintae_ingest/parsers.py` |
 | Column mapper, synonym dictionary, header fingerprint | `packages/ingest/pintae_ingest/mapper.py` |
-| RP-1, CAL-1, CAL-2 data and RP-1 fixtures | `packages/rulepacks/pintae_rulepacks/` |
+| RP-1, CAL-1, CAL-2, CAL-3 (C1: PRV-2 sourced to MD 197 of 2026) data and RP-1 fixtures | `packages/rulepacks/pintae_rulepacks/` |
 
 ## 5. Tenant safety
 

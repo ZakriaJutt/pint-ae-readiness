@@ -70,7 +70,7 @@ flowchart LR
 | ID | Need | Owner | Est | Deliverable | Acceptance check | Subtasks |
 |---|---|---|---|---|---|---|
 | T-1.1.1 | MH-06, MH-12 | D | 12–18 | RP-1 data file: 20 rules with applicability, severity, source references | Every rule cites a source line; reviewed against SRC-03 and SRC-12 by a second person | Transcribe from workbook; add applicability; hash |
-| T-1.1.2 | MH-03 | D | 4–6 | Calendar files CAL-1, CAL-2 with the recorded discrepancy, the SEG-U and SEG-N rows, and provisions PRV-1 to PRV-4 | UT-10, UT-16 and UT-18 expectations derivable from the file alone; reviewed against SRC-05 and SRC-06 by a second person | Encode segments, dates, bases, provisions, sources |
+| T-1.1.2 | MH-03 | D | 4–6 | Calendar files CAL-1, CAL-2, CAL-3 (C1: PRV-2 re-sourced to MD 197 of 2026) with the recorded discrepancy, the SEG-U and SEG-N rows, and provisions PRV-1 to PRV-4 | UT-10, UT-16 and UT-18 expectations derivable from the file alone; reviewed against SRC-05 and SRC-06 by a second person | Encode segments, dates, bases, provisions, sources |
 | T-1.1.3 | All tests | D | 10–16 | Fixtures FX-A and FX-B (from T-0.1.6) converted to machine-readable form; FX-C to FX-E added | Expected findings listed per fixture; no real names or numbers | Convert; generate; seed defects; write expectations |
 | T-1.1.4 | S-04, S-06, S-08, S-10, S-12 | D | 12–20 | Wireframes | Each shows the states of App-flow §4 | Draw; review with a pilot Reviewer |
 | T-1.1.5 | MH-08 | D | 4–6 | Status decision table | Covers every combination in UT-11 | Enumerate; review |
@@ -223,6 +223,8 @@ Fixtures in section 9. None has been run.
 | UT-16 | Calendar CAL-2, SEG-L | Date 30 October 2026 with the recorded guideline discrepancy |
 | UT-17 | Data-ready result whose newest data is 45 days old, then 46, with no job running | Data-ready; Stale |
 | UT-18 | Invoice to a VAT-group member dated 31 December 2028; same dated 1 January 2029; same dated 31 December 2026 | Grace period (PRV-2), outside the denominator; checked normally; checked normally |
+| UT-20 | C1: calendar CAL-3; invoice to a Tax Group member dated 1 January 2027, 30 June 2027, 31 December 2028, 31 December 2026, 1 January 2029; RP-1 fixture suite under CAL-3 | PRV-2 cites SRC-25 (MD 197 of 2026); grace period inside the window, checked normally outside it; the finding text names PRV-2, 2028-12-31 and SRC-25 (before C1 it read only "grace period (PRV-2)"); fixture suite passes |
+| UT-21 | C1: dashboard row fields; SEG-S entity on 31 March and 1 April 2027, not appointed and appointed | The row carries no data status; "past appoint-by without ASP" is false, true, false: it reads only the calendar date and the recorded ASP status |
 | UT-19 | Business-day turnaround: complete Thursday 17:00 Dubai, delivered Monday 16:00; same with the Friday listed as a holiday; delivered Tuesday 09:00 with no holiday | 2 days, inside; 1 day, inside; 3 days, outside |
 
 **Integration**
@@ -250,6 +252,7 @@ Fixtures in section 9. None has been run.
 | IT-19 | Request a handoff pack with one failed blocker on customers; with one not-checked blocker on items; with none | Refused with reason; refused with reason; pack built |
 | IT-20 | Firm A requests an export while firm B has data; inspect every file in the ZIP | Only firm A identifiers; firm B's export link returns 404 for firm A |
 | IT-21 | Vendor support user reads firm A with a valid grant, an expired grant, a revoked grant, and firm B with firm A's grant; attempts a write; publisher publishes with a hash that differs from the fixture run | Rows; 404; 404; 404; refused; refused; every attempt audited and visible to the Owner |
+| IT-22 | C1: publish CAL-3 through the publication path | It becomes the current calendar; segment dates equal CAL-2's; PRV-2 rows carry the MD 197 source |
 
 **End-to-end and operational**
 

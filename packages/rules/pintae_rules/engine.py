@@ -9,7 +9,8 @@ Inputs are canonical rows produced by the mapper; outputs are one result per
   mapping, an unknown seller-profile item and an unresolved prerequisite each give
   ``not_checked``, never ``pass`` (UT-03, UT-08, UT-11);
 * document types 389 and 261 give ``manual_review`` (RC-11);
-* consumer buyers are ``out_of_scope``; PRV-2 invoices are ``grace_period`` (UT-04, UT-18);
+* consumer buyers are ``out_of_scope``; PRV-2 invoices (same Tax Group, MD 197 of 2026)
+  are ``grace_period`` and cite the provision's end date and sources (UT-04, UT-18, UT-28);
 * money and quantities are ``Decimal`` with explicit rounding (UT-09);
 * output order and hash are deterministic (UT-12).
 """
@@ -1149,7 +1150,7 @@ def _needs_legal_registration(ctx: Ctx, rec: Record) -> bool:
 # --------------------------------------------------------------------------- run
 
 
-def _scope(ctx: Ctx, rec: Record) -> tuple[str, str | None]:
+def _scope(ctx: Ctx, rec: Record) -> tuple[str, Provision | None]:
     if rec.dataset not in ("customers", "invoices"):
         return ("in_scope", None)
     if rec.dup_conflict:
@@ -1163,8 +1164,18 @@ def _scope(ctx: Ctx, rec: Record) -> tuple[str, str | None]:
                 and p.selector.get("buyer_class") == rec.buyer_class
                 and p.covers(rec.issue_date)
             ):
-                return ("grace_period", p.code)
+                return ("grace_period", p)
     return ("in_scope", None)
+
+
+def _provision_message(prov: Provision) -> str:
+    """The finding text for a record a dated provision takes out of the denominator.
+    Built from the calendar's own data (dates and sources), so a corrected provision,
+    for example PRV-2 re-sourced to MD 197 of 2026 in CAL-3 (C1), shows its legal
+    basis and end date without a code change."""
+    until = f" until {prov.applies_to.isoformat()}" if prov.applies_to is not None else ""
+    refs = "; ".join(prov.source_refs)
+    return f"excluded from the denominator by {prov.code}{until}" + (f" ({refs})" if refs else "")
 
 
 def _finding(rule: Rule, rec: Record, issue: Issue) -> Finding:
@@ -1248,8 +1259,8 @@ def run(pack: RulePack, inp: EngineInput) -> EngineResult:
                             rec.buyer_class,
                             None,
                             "consumer buyer: out of scope"
-                            if scope == "out_of_scope"
-                            else f"grace period ({prov})",
+                            if scope == "out_of_scope" or prov is None
+                            else _provision_message(prov),
                         ),
                     )
                 )
