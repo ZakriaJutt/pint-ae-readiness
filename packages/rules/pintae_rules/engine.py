@@ -108,7 +108,11 @@ class Finding:
 
     @property
     def fingerprint(self) -> str:
-        return f"{self.rule_code}|{self.dataset}|{self.record_key}|{self.field or ''}"
+        """Rule, dataset, record and field. Non-fail outcomes carry their outcome, so a
+        ``not_checked`` on one line is never merged into a ``fail`` on another (B1-008);
+        a ``fail`` fingerprint, which exceptions attach to, is unchanged."""
+        base = f"{self.rule_code}|{self.dataset}|{self.record_key}|{self.field or ''}"
+        return base if self.outcome == FAIL else f"{base}|{self.outcome}"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -208,6 +212,10 @@ class Record:
     document_type_problem: str | None = None
     issue_date: date | None = None
     customer_key: str | None = None
+    orig_key: str = ""  # record key before duplicate rows were disambiguated
+    dup_conflict: bool = False  # customers: same ID on rows with different details
+    customer_link: str = "ok"  # invoices: ok | unreadable | empty | missing | ambiguous
+    customer_link_reason: str | None = None
 
     @property
     def first(self) -> Row:
@@ -272,6 +280,27 @@ class Ctx:
             return ("invalid", raw)
         shape = self._shapes.get(list_name)
         if shape is not None and shape.fullmatch(raw):
+            return ("invalid", raw)
+        return ("unmapped", raw)
+
+    def country(self, raw: str | None) -> tuple[str, str | None]:
+        """ISO 3166-1 alpha-2, normalised (B1-003): case and spacing are ignored, the pack's
+        aliases (for the UAE: "UAE", "U.A.E.", "United Arab Emirates", "ARE") resolve, other
+        free text needs an approved value mapping. Same return shape as ``code``."""
+        if raw is None:
+            return ("missing", None)
+        allowed = self.pack.code_lists.get("country", ())
+        up = raw.strip().upper()
+        if up in allowed:
+            return ("ok", up)
+        key = re.sub(r"[^A-Z]", "", up)
+        alias = self.pack.aliases.get("country", {}).get(key)
+        if alias is not None:
+            return ("ok", alias)
+        mapped = self.inp.value_maps.get(("country", raw))
+        if mapped is not None:
+            return ("ok", mapped) if mapped in allowed else ("invalid", raw)
+        if re.fullmatch(r"[A-Za-z]{2,3}", raw.strip()):
             return ("invalid", raw)
         return ("unmapped", raw)
 
@@ -392,6 +421,22 @@ def _legal_registration(ctx: Ctx, rule: Rule, rec: Record) -> list[Issue]:
 
 @evaluator("buyer_legal_registration")
 def _buyer_legal_registration(ctx: Ctx, rule: Rule, rec: Record) -> list[Issue]:
+    if rec.dataset == "invoices":
+        # B1-007: a commercial invoice (480, 81) needs IBT-047 of its buyer (GL V2.0
+        # §18.2.1). The customer-level check covers a readable link; without one the
+        # rule could not run, which is reported, never skipped.
+        if rec.customer_link == "ok":
+            return []
+        return [
+            Issue(
+                NOT_CHECKED,
+                "customer_id",
+                rec.customer_key,
+                rec.customer_link_reason or PREREQUISITE_UNRESOLVED,
+                "commercial invoice: buyer legal registration cannot be checked without a "
+                "single matching customer",
+            )
+        ]
     return _registration(
         ctx, rec, "legal_reg_type", "legal_reg_id", "legal_reg_authority", "legal_reg_country"
     )
@@ -421,11 +466,29 @@ def _address(ctx: Ctx, rule: Rule, rec: Record) -> list[Issue]:
         _need(ctx, rec, "name", issues)
     _need(ctx, rec, "address_line", issues)
     _need(ctx, rec, "city", issues)
-    country = _need(ctx, rec, "country_code", issues)
-    if country is None:
+    raw_country = _need(ctx, rec, "country_code", issues)
+    if raw_country is None:
         # Emirate requirement depends on the country, which is already an issue.
         return issues
-    if country.upper() == "AE":
+    status, country = ctx.country(raw_country)
+    if status == "invalid":
+        issues.append(
+            Issue(
+                FAIL, "country_code", raw_country, None, "country is not an ISO 3166 alpha-2 code"
+            )
+        )
+    elif status == "unmapped":
+        issues.append(
+            Issue(
+                NOT_CHECKED,
+                "country_code",
+                raw_country,
+                VALUE_UNMAPPED,
+                "country value has no approved mapping; the emirate rule depends on it",
+            )
+        )
+    elif country == "AE":
+        # MF 19/28: the emirate is mandatory whenever the country is the UAE, in any spelling.
         _emirate(ctx, rec, issues)
     return issues
 
@@ -476,6 +539,68 @@ def _buyer_tax_id(ctx: Ctx, rule: Rule, rec: Record) -> list[Issue]:
     return [
         Issue(FAIL, "trn", value, None, "UAE business buyer needs a TRN (15 digits, 1…03) or a TIN")
     ]
+
+
+@evaluator("buyer_trn_preferred")
+def _buyer_trn_preferred(ctx: Ctx, rule: Rule, rec: Record) -> list[Issue]:
+    """Warning: MF 24 says VAT-registered UAE buyers give the TRN; a TIN alone is accepted
+    by RC-07 but recorded here for the Reviewer."""
+    try:
+        trn = ctx.value(rec, "trn")
+    except NotChecked:
+        trn = None
+    if trn is not None and ctx.matches("trn", _digits(trn)):
+        return []
+    try:
+        tin = ctx.value(rec, "tin")
+    except NotChecked:
+        return []
+    if tin is not None and ctx.matches("tin", _digits(tin)):
+        return [
+            Issue(
+                FAIL,
+                "trn",
+                tin,
+                None,
+                "buyer identified by TIN only; if the buyer is VAT-registered MF 24 requires its TRN",
+            )
+        ]
+    return []
+
+
+@evaluator("customer_link")
+def _customer_link(ctx: Ctx, rule: Rule, rec: Record) -> list[Issue]:
+    """B1-004: one customer record per ID, and each invoice resolves to one customer."""
+    if rec.dataset == "customers":
+        if rec.dup_conflict:
+            return [
+                Issue(
+                    FAIL,
+                    "customer_id",
+                    rec.orig_key,
+                    None,
+                    "customer ID appears on several rows with different details",
+                )
+            ]
+        return []
+    if rec.customer_link in ("ok", "unreadable"):
+        return []  # an unreadable link is reported by the rules that need it (RC-08)
+    if rec.customer_link == "ambiguous":
+        return [
+            Issue(
+                NOT_CHECKED,
+                "customer_id",
+                rec.customer_key,
+                PREREQUISITE_UNRESOLVED,
+                "invoice customer ID matches several conflicting customer rows",
+            )
+        ]
+    msg = (
+        "invoice has no customer ID"
+        if rec.customer_link == "empty"
+        else "invoice customer ID is not in the customers file"
+    )
+    return [Issue(FAIL, "customer_id", rec.customer_key, None, msg)]
 
 
 @evaluator("invoice_number")
@@ -870,6 +995,7 @@ def _build_records(ds_name: str, ds: DatasetInput) -> list[Record]:
         # Disambiguate repeated keys deterministically so fingerprints stay unique.
         seen: dict[str, int] = {}
         for rec in recs:
+            rec.orig_key = rec.key
             n = seen.get(rec.key, 0)
             seen[rec.key] = n + 1
             if n:
@@ -878,7 +1004,10 @@ def _build_records(ds_name: str, ds: DatasetInput) -> list[Record]:
     groups: dict[str, list[Row]] = {}
     for r in ds.rows:
         groups.setdefault(_record_key(ds_name, r, key_field, ds.field_status), []).append(r)
-    return [Record(ds_name, k, rows, ds.upload_id, ds.field_status) for k, rows in groups.items()]
+    return [
+        Record(ds_name, k, rows, ds.upload_id, ds.field_status, orig_key=k)
+        for k, rows in groups.items()
+    ]
 
 
 def _resolve_buyer_class(ctx: Ctx, rec: Record) -> None:
@@ -896,7 +1025,9 @@ def _resolve_buyer_class(ctx: Ctx, rec: Record) -> None:
         rec.buyer_class_problem = PREREQUISITE_UNRESOLVED
 
 
-def _resolve_invoice(ctx: Ctx, rec: Record, customers: Mapping[str, Record]) -> None:
+def _resolve_invoice(
+    ctx: Ctx, rec: Record, customers: Mapping[str, list[Record]], have_customers: bool
+) -> None:
     try:
         raw = ctx.value(rec, "document_type")
     except NotChecked as nc:
@@ -915,12 +1046,29 @@ def _resolve_invoice(ctx: Ctx, rec: Record, customers: Mapping[str, Record]) -> 
         rec.issue_date = None
     try:
         rec.customer_key = ctx.value(rec, "customer_id")
-    except NotChecked:
+    except NotChecked as nc:
         rec.customer_key = None
-    cust = customers.get(rec.customer_key or "")
-    if cust is not None:
-        rec.buyer_class = cust.buyer_class
-        rec.buyer_class_problem = cust.buyer_class_problem
+        rec.customer_link, rec.customer_link_reason = "unreadable", nc.reason
+        return
+    if rec.customer_key is None:
+        rec.customer_link, rec.customer_link_reason = "empty", PREREQUISITE_UNRESOLVED
+        return
+    group = customers.get(rec.customer_key)
+    if not group:
+        if have_customers:
+            rec.customer_link, rec.customer_link_reason = "missing", PREREQUISITE_UNRESOLVED
+        else:
+            rec.customer_link, rec.customer_link_reason = "unreadable", PREREQUISITE_UNRESOLVED
+        return
+    if any(c.dup_conflict for c in group):
+        # Scope is decided per invoice: conflicting customer rows never take it out of
+        # scope; dependent checks are not_checked (B1-004).
+        rec.customer_link, rec.customer_link_reason = "ambiguous", PREREQUISITE_UNRESOLVED
+        rec.buyer_class, rec.buyer_class_problem = None, PREREQUISITE_UNRESOLVED
+        return
+    cust = group[0]
+    rec.buyer_class = cust.buyer_class
+    rec.buyer_class_problem = cust.buyer_class_problem
 
 
 # --------------------------------------------------------------------------- applicability
@@ -951,6 +1099,11 @@ def _applies(
         if rec.document_type not in a["document_types"]:
             return (False, None)
     doc_types = rule.param("document_types")
+    if doc_types and rec.dataset == "invoices":
+        if rec.document_type is None:
+            return (True, rec.document_type_problem or VALUE_UNMAPPED)
+        if rec.document_type not in doc_types:
+            return (False, None)
     if doc_types and rec.dataset == "customers":
         # RC-08: buyers on commercial invoices or with a UAE endpoint.
         endpoint = (
@@ -958,7 +1111,7 @@ def _applies(
             if ctx.has_field(rec, "endpoint_id")
             else None
         )
-        if rec.key not in commercial_buyers and endpoint is None:
+        if rec.orig_key not in commercial_buyers and endpoint is None:
             return (False, None)
     if rec.dataset == "invoices" and rec.issue_date is not None:
         if rule.valid_from is not None and rec.issue_date < rule.valid_from:
@@ -974,6 +1127,8 @@ def _applies(
 def _scope(ctx: Ctx, rec: Record) -> tuple[str, str | None]:
     if rec.dataset not in ("customers", "invoices"):
         return ("in_scope", None)
+    if rec.dup_conflict:
+        return ("in_scope", None)  # conflicting rows are checked, never dropped
     if rec.buyer_class == "consumer":
         return ("out_of_scope", None)
     if rec.dataset == "invoices" and rec.buyer_class is not None and rec.issue_date is not None:
@@ -1028,10 +1183,19 @@ def run(pack: RulePack, inp: EngineInput) -> EngineResult:
     customers = by_ds["customers"]
     for c in customers:
         _resolve_buyer_class(ctx, c)
-    cust_index = {c.key: c for c in customers}
+    cust_index: dict[str, list[Record]] = {}
+    for c in customers:
+        cust_index.setdefault(c.orig_key, []).append(c)
+    for group in cust_index.values():
+        if len(group) > 1:
+            shapes = {tuple(sorted((k, v) for k, v in g.first.values.items())) for g in group}
+            if len(shapes) > 1:
+                for g in group:
+                    g.dup_conflict = True
     commercial = set(pack.code_lists.get("commercial_document_type", ()))
+    have_customers = inp.datasets.get("customers") is not None
     for inv in by_ds["invoices"]:
-        _resolve_invoice(ctx, inv, cust_index)
+        _resolve_invoice(ctx, inv, cust_index, have_customers)
     commercial_buyers = {
         inv.customer_key
         for inv in by_ds["invoices"]
@@ -1091,7 +1255,8 @@ def run(pack: RulePack, inp: EngineInput) -> EngineResult:
     findings.sort(
         key=lambda f: (f.dataset, f.record_key, f.rule_code, f.field or "", f.row_number, f.outcome)
     )
-    # Fingerprints must be unique per run: keep the first issue per fingerprint.
+    # Fingerprints must be unique per run: keep the first issue per fingerprint (the
+    # outcome is part of a non-fail fingerprint, so outcomes are never merged).
     unique: dict[str, Finding] = {}
     for f in findings:
         unique.setdefault(f.fingerprint, f)

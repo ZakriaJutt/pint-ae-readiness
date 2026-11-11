@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
@@ -65,6 +65,7 @@ class RulePack:
     date_formats: tuple[str, ...]
     segments: tuple[str, ...]
     hash: bytes
+    aliases: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
 
     @property
     def starts_on(self) -> date:
@@ -136,6 +137,7 @@ def pack_from_data(data: Mapping[str, Any]) -> RulePack:
         date_formats=tuple(data.get("date_formats", ("%Y-%m-%d",))),
         segments=tuple(data.get("segments", ())),
         hash=content_hash(data),
+        aliases=data.get("aliases", {}),
     )
 
 

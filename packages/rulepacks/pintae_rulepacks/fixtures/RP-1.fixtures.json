@@ -815,5 +815,380 @@
     "outcome": "grace_period"
    }
   ]
+ },
+ {
+  "name": "B1-003 buyer country 'UAE' needs an emirate",
+  "seller": {
+   "vat_registered": "yes",
+   "trn": "100234567800003",
+   "registration_type": "TL",
+   "licence_number": "CN-1234567",
+   "licence_authority": "Dubai DET",
+   "address_line": "Office 1, Synthetic Tower",
+   "city": "Dubai",
+   "country_code": "AE",
+   "emirate": "DXB"
+  },
+  "datasets": {
+   "customers": {
+    "rows": [
+     {
+      "customer_id": "C1",
+      "name": "Synthetic Buyer LLC",
+      "buyer_class": "uae_business",
+      "trn": "100234567800003",
+      "tin": null,
+      "address_line": "Unit 2",
+      "city": "Dubai",
+      "country_code": "UAE",
+      "emirate": null,
+      "legal_reg_type": "TL",
+      "legal_reg_id": "CN-1",
+      "legal_reg_authority": "Dubai DET"
+     }
+    ]
+   }
+  },
+  "expect": [
+   {
+    "rule": "RC-06",
+    "record": "C1",
+    "outcome": "fail"
+   }
+  ]
+ },
+ {
+  "name": "B1-003 seller country free text, emirate unknown",
+  "seller": {
+   "vat_registered": "yes",
+   "trn": "100234567800003",
+   "registration_type": "TL",
+   "licence_number": "CN-1234567",
+   "licence_authority": "Dubai DET",
+   "address_line": "Office 1, Synthetic Tower",
+   "city": "Dubai",
+   "country_code": "United Arab Emirates",
+   "emirate": null
+  },
+  "expect": [
+   {
+    "rule": "RC-04",
+    "record": "seller",
+    "outcome": "not_checked"
+   }
+  ]
+ },
+ {
+  "name": "B1-003 invalid country code",
+  "seller": {
+   "vat_registered": "yes",
+   "trn": "100234567800003",
+   "registration_type": "TL",
+   "licence_number": "CN-1234567",
+   "licence_authority": "Dubai DET",
+   "address_line": "Office 1, Synthetic Tower",
+   "city": "Dubai",
+   "country_code": "AE",
+   "emirate": "DXB"
+  },
+  "datasets": {
+   "customers": {
+    "rows": [
+     {
+      "customer_id": "C1",
+      "name": "Synthetic Buyer LLC",
+      "buyer_class": "foreign",
+      "trn": "100234567800003",
+      "tin": null,
+      "address_line": "Unit 2",
+      "city": "Dubai",
+      "country_code": "XX",
+      "emirate": null,
+      "legal_reg_type": "TL",
+      "legal_reg_id": "CN-1",
+      "legal_reg_authority": "Dubai DET"
+     }
+    ]
+   }
+  },
+  "expect": [
+   {
+    "rule": "RC-06",
+    "record": "C1",
+    "outcome": "fail"
+   }
+  ]
+ },
+ {
+  "name": "B1-004 conflicting customer rows",
+  "seller": {
+   "vat_registered": "yes",
+   "trn": "100234567800003",
+   "registration_type": "TL",
+   "licence_number": "CN-1234567",
+   "licence_authority": "Dubai DET",
+   "address_line": "Office 1, Synthetic Tower",
+   "city": "Dubai",
+   "country_code": "AE",
+   "emirate": "DXB"
+  },
+  "datasets": {
+   "customers": {
+    "rows": [
+     {
+      "customer_id": "C1",
+      "name": "Synthetic Buyer LLC",
+      "buyer_class": "consumer",
+      "trn": "100234567800003",
+      "tin": null,
+      "address_line": "Unit 2",
+      "city": "Dubai",
+      "country_code": "AE",
+      "emirate": "DXB",
+      "legal_reg_type": "TL",
+      "legal_reg_id": "CN-1",
+      "legal_reg_authority": "Dubai DET"
+     },
+     {
+      "customer_id": "C1",
+      "name": "Synthetic Buyer LLC",
+      "buyer_class": "uae_business",
+      "trn": "100234567800003",
+      "tin": null,
+      "address_line": "Unit 2",
+      "city": "Dubai",
+      "country_code": "AE",
+      "emirate": "DXB",
+      "legal_reg_type": "TL",
+      "legal_reg_id": "CN-1",
+      "legal_reg_authority": "Dubai DET"
+     }
+    ]
+   },
+   "invoices": {
+    "rows": [
+     {
+      "invoice_number": "INV-1",
+      "issue_date": "2027-02-01",
+      "due_date": "2027-03-01",
+      "document_type": "380",
+      "customer_id": "C1",
+      "currency": "AED",
+      "exchange_rate": null,
+      "payment_means": "30",
+      "quantity": "2000",
+      "unit": "H87",
+      "unit_price": "5.00",
+      "line_net": "10000.00",
+      "tax_category": "S",
+      "tax_rate": "5",
+      "invoice_net_total": "10000.00",
+      "invoice_tax_total": "500.00",
+      "invoice_total": "99999.00",
+      "transaction_flags": "00000000"
+     }
+    ]
+   }
+  },
+  "expect": [
+   {
+    "rule": "RC-21",
+    "record": "C1",
+    "outcome": "fail"
+   },
+   {
+    "rule": "RC-21",
+    "record": "INV-1",
+    "outcome": "not_checked"
+   },
+   {
+    "rule": "RC-17",
+    "record": "INV-1",
+    "outcome": "fail"
+   }
+  ]
+ },
+ {
+  "name": "B1-006 transaction type code not in this file",
+  "seller": {
+   "vat_registered": "yes",
+   "trn": "100234567800003",
+   "registration_type": "TL",
+   "licence_number": "CN-1234567",
+   "licence_authority": "Dubai DET",
+   "address_line": "Office 1, Synthetic Tower",
+   "city": "Dubai",
+   "country_code": "AE",
+   "emirate": "DXB"
+  },
+  "datasets": {
+   "customers": {
+    "rows": [
+     {
+      "customer_id": "C1",
+      "name": "Synthetic Buyer LLC",
+      "buyer_class": "uae_business",
+      "trn": "100234567800003",
+      "tin": null,
+      "address_line": "Unit 2",
+      "city": "Dubai",
+      "country_code": "AE",
+      "emirate": "DXB",
+      "legal_reg_type": "TL",
+      "legal_reg_id": "CN-1",
+      "legal_reg_authority": "Dubai DET"
+     }
+    ]
+   },
+   "invoices": {
+    "rows": [
+     {
+      "invoice_number": "INV-1",
+      "issue_date": "2027-02-01",
+      "due_date": "2027-03-01",
+      "document_type": "380",
+      "customer_id": "C1",
+      "currency": "AED",
+      "exchange_rate": null,
+      "payment_means": "30",
+      "quantity": "2000",
+      "unit": "H87",
+      "unit_price": "5.00",
+      "line_net": "10000.00",
+      "tax_category": "S",
+      "tax_rate": "5",
+      "invoice_net_total": "10000.00",
+      "invoice_tax_total": "500.00",
+      "invoice_total": "10500.00",
+      "transaction_flags": "00000000"
+     }
+    ],
+    "fields": {
+     "transaction_flags": "absent"
+    }
+   }
+  },
+  "expect": [
+   {
+    "rule": "RC-19",
+    "record": "INV-1",
+    "outcome": "not_checked"
+   }
+  ]
+ },
+ {
+  "name": "B1-007 commercial invoice without customer link",
+  "seller": {
+   "vat_registered": "yes",
+   "trn": "100234567800003",
+   "registration_type": "TL",
+   "licence_number": "CN-1234567",
+   "licence_authority": "Dubai DET",
+   "address_line": "Office 1, Synthetic Tower",
+   "city": "Dubai",
+   "country_code": "AE",
+   "emirate": "DXB"
+  },
+  "datasets": {
+   "customers": {
+    "rows": [
+     {
+      "customer_id": "C1",
+      "name": "Synthetic Buyer LLC",
+      "buyer_class": "uae_business",
+      "trn": "100234567800003",
+      "tin": null,
+      "address_line": "Unit 2",
+      "city": "Dubai",
+      "country_code": "AE",
+      "emirate": "DXB",
+      "legal_reg_type": null,
+      "legal_reg_id": null,
+      "legal_reg_authority": "Dubai DET"
+     }
+    ]
+   },
+   "invoices": {
+    "rows": [
+     {
+      "invoice_number": "INV-1",
+      "issue_date": "2027-02-01",
+      "due_date": "2027-03-01",
+      "document_type": "480",
+      "customer_id": "C1",
+      "currency": "AED",
+      "exchange_rate": null,
+      "payment_means": "30",
+      "quantity": "2000",
+      "unit": "H87",
+      "unit_price": "5.00",
+      "line_net": "10000.00",
+      "tax_category": "O",
+      "tax_rate": null,
+      "invoice_net_total": "10000.00",
+      "invoice_tax_total": "0.00",
+      "invoice_total": "10000.00",
+      "transaction_flags": "00000000"
+     }
+    ],
+    "fields": {
+     "customer_id": "absent"
+    }
+   }
+  },
+  "expect": [
+   {
+    "rule": "RC-08",
+    "record": "INV-1",
+    "dataset": "invoices",
+    "outcome": "not_checked"
+   }
+  ]
+ },
+ {
+  "name": "MF 24 buyer with TIN only",
+  "seller": {
+   "vat_registered": "yes",
+   "trn": "100234567800003",
+   "registration_type": "TL",
+   "licence_number": "CN-1234567",
+   "licence_authority": "Dubai DET",
+   "address_line": "Office 1, Synthetic Tower",
+   "city": "Dubai",
+   "country_code": "AE",
+   "emirate": "DXB"
+  },
+  "datasets": {
+   "customers": {
+    "rows": [
+     {
+      "customer_id": "C1",
+      "name": "Synthetic Buyer LLC",
+      "buyer_class": "uae_business",
+      "trn": null,
+      "tin": "1002345678",
+      "address_line": "Unit 2",
+      "city": "Dubai",
+      "country_code": "AE",
+      "emirate": "DXB",
+      "legal_reg_type": "TL",
+      "legal_reg_id": "CN-1",
+      "legal_reg_authority": "Dubai DET"
+     }
+    ]
+   }
+  },
+  "expect": [
+   {
+    "rule": "RC-07",
+    "record": "C1",
+    "outcome": "pass"
+   },
+   {
+    "rule": "RC-22",
+    "record": "C1",
+    "outcome": "fail"
+   }
+  ]
  }
 ]

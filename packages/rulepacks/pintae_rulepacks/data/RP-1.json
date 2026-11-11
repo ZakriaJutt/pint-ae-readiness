@@ -260,6 +260,257 @@
    "EID",
    "PAS",
    "CD"
+  ],
+  "country": [
+   "AD",
+   "AE",
+   "AF",
+   "AG",
+   "AI",
+   "AL",
+   "AM",
+   "AO",
+   "AQ",
+   "AR",
+   "AS",
+   "AT",
+   "AU",
+   "AW",
+   "AX",
+   "AZ",
+   "BA",
+   "BB",
+   "BD",
+   "BE",
+   "BF",
+   "BG",
+   "BH",
+   "BI",
+   "BJ",
+   "BL",
+   "BM",
+   "BN",
+   "BO",
+   "BQ",
+   "BR",
+   "BS",
+   "BT",
+   "BV",
+   "BW",
+   "BY",
+   "BZ",
+   "CA",
+   "CC",
+   "CD",
+   "CF",
+   "CG",
+   "CH",
+   "CI",
+   "CK",
+   "CL",
+   "CM",
+   "CN",
+   "CO",
+   "CR",
+   "CU",
+   "CV",
+   "CW",
+   "CX",
+   "CY",
+   "CZ",
+   "DE",
+   "DJ",
+   "DK",
+   "DM",
+   "DO",
+   "DZ",
+   "EC",
+   "EE",
+   "EG",
+   "EH",
+   "ER",
+   "ES",
+   "ET",
+   "FI",
+   "FJ",
+   "FK",
+   "FM",
+   "FO",
+   "FR",
+   "GA",
+   "GB",
+   "GD",
+   "GE",
+   "GF",
+   "GG",
+   "GH",
+   "GI",
+   "GL",
+   "GM",
+   "GN",
+   "GP",
+   "GQ",
+   "GR",
+   "GS",
+   "GT",
+   "GU",
+   "GW",
+   "GY",
+   "HK",
+   "HM",
+   "HN",
+   "HR",
+   "HT",
+   "HU",
+   "ID",
+   "IE",
+   "IL",
+   "IM",
+   "IN",
+   "IO",
+   "IQ",
+   "IR",
+   "IS",
+   "IT",
+   "JE",
+   "JM",
+   "JO",
+   "JP",
+   "KE",
+   "KG",
+   "KH",
+   "KI",
+   "KM",
+   "KN",
+   "KP",
+   "KR",
+   "KW",
+   "KY",
+   "KZ",
+   "LA",
+   "LB",
+   "LC",
+   "LI",
+   "LK",
+   "LR",
+   "LS",
+   "LT",
+   "LU",
+   "LV",
+   "LY",
+   "MA",
+   "MC",
+   "MD",
+   "ME",
+   "MF",
+   "MG",
+   "MH",
+   "MK",
+   "ML",
+   "MM",
+   "MN",
+   "MO",
+   "MP",
+   "MQ",
+   "MR",
+   "MS",
+   "MT",
+   "MU",
+   "MV",
+   "MW",
+   "MX",
+   "MY",
+   "MZ",
+   "NA",
+   "NC",
+   "NE",
+   "NF",
+   "NG",
+   "NI",
+   "NL",
+   "NO",
+   "NP",
+   "NR",
+   "NU",
+   "NZ",
+   "OM",
+   "PA",
+   "PE",
+   "PF",
+   "PG",
+   "PH",
+   "PK",
+   "PL",
+   "PM",
+   "PN",
+   "PR",
+   "PS",
+   "PT",
+   "PW",
+   "PY",
+   "QA",
+   "RE",
+   "RO",
+   "RS",
+   "RU",
+   "RW",
+   "SA",
+   "SB",
+   "SC",
+   "SD",
+   "SE",
+   "SG",
+   "SH",
+   "SI",
+   "SJ",
+   "SK",
+   "SL",
+   "SM",
+   "SN",
+   "SO",
+   "SR",
+   "SS",
+   "ST",
+   "SV",
+   "SX",
+   "SY",
+   "SZ",
+   "TC",
+   "TD",
+   "TF",
+   "TG",
+   "TH",
+   "TJ",
+   "TK",
+   "TL",
+   "TM",
+   "TN",
+   "TO",
+   "TR",
+   "TT",
+   "TV",
+   "TW",
+   "TZ",
+   "UA",
+   "UG",
+   "UM",
+   "US",
+   "UY",
+   "UZ",
+   "VA",
+   "VC",
+   "VE",
+   "VG",
+   "VI",
+   "VN",
+   "VU",
+   "WF",
+   "WS",
+   "YE",
+   "YT",
+   "ZA",
+   "ZM",
+   "ZW"
   ]
  },
  "code_shapes": {
@@ -275,7 +526,8 @@
   "unit": "unit",
   "tax_category": "tax_treatment",
   "document_type": "document_type",
-  "buyer_class": "buyer_class"
+  "buyer_class": "buyer_class",
+  "country": "country"
  },
  "patterns": {
   "trn": "^1[0-9]{12}03$",
@@ -289,7 +541,8 @@
  "notes": [
   "The unit list is a subset of UNECE Rec 20/21; a valid code outside it fails and needs a new pack version (safe direction).",
   "The margin-scheme tax category is not confirmed at source and is not in this pack.",
-  "RP-1 covers mandatory fields at source-data level, not all 132 PINT AE jurisdiction rules (SRC-12). A pass is not a pass at an ASP."
+  "RP-1 covers mandatory fields at source-data level, not all 132 PINT AE jurisdiction rules (SRC-12). A pass is not a pass at an ASP.",
+  "B1 fix round 1 (2026-11-11, before any production publication): RC-19 made blocking, RC-08 extended to commercial invoices without a customer link, country validation added to RC-04/RC-06, RC-21 and RC-22 added. RP-1 had not been published outside local and test databases, so the correction is made under the same code; any later change is a new pack version (AD-07)."
  ],
  "rules": [
   {
@@ -377,9 +630,10 @@
    "valid_to": null,
    "source_refs": [
     "IBR-128-AE",
-    "MF 17-20"
+    "MF 17-20",
+    "MoF Mandatory Fields V1.1 (28 Oct 2026) fields 19-20, 28-29: 'For UAE it should be AE'"
    ],
-   "description": "Seller address line, city, country; emirate is a listed code when country is AE"
+   "description": "Seller address line, city, country; emirate is a listed code when country is AE; country is an ISO 3166 alpha-2 code (UAE spellings normalised to AE) and the emirate is required whenever the country is AE"
   },
   {
    "code": "RC-05",
@@ -425,9 +679,10 @@
    "source_refs": [
     "MF 21",
     "MF 26-29",
-    "IBR-128-AE"
+    "IBR-128-AE",
+    "MoF Mandatory Fields V1.1 (28 Oct 2026) fields 19-20, 28-29: 'For UAE it should be AE'"
    ],
-   "description": "Buyer name, address line, city, country code; emirate code when AE",
+   "description": "Buyer name, address line, city, country code; emirate code when AE; country is an ISO 3166 alpha-2 code (UAE spellings normalised to AE) and the emirate is required whenever the country is AE",
    "params": {
     "require_name": true
    }
@@ -460,7 +715,10 @@
    "severity": "blocker",
    "evaluator": "buyer_legal_registration",
    "applies_to": {
-    "dataset": "customers",
+    "dataset": [
+     "customers",
+     "invoices"
+    ],
     "buyer_class": [
      "uae_business",
      "vat_group_member",
@@ -479,9 +737,10 @@
     "IBR-136-AE",
     "IBR-149-AE",
     "IBR-101-AE",
-    "IBR-010-AE"
+    "IBR-010-AE",
+    "MoF Guidelines V2.0 (26 Oct 2026) §18.2.1"
    ],
-   "description": "Buyer legal registration identifier and type; authority when TL; issuing country when PAS. Applies to buyers on commercial invoices (480, 81) or with a UAE endpoint",
+   "description": "Buyer legal registration identifier and type; authority when TL; issuing country when PAS. Applies to buyers on commercial invoices (480, 81) or with a UAE endpoint; a commercial invoice whose customer cannot be matched gives not_checked",
    "params": {
     "document_types": [
      "480",
@@ -697,7 +956,7 @@
   },
   {
    "code": "RC-19",
-   "severity": "warning",
+   "severity": "blocker",
    "evaluator": "transaction_flags",
    "applies_to": {
     "dataset": "invoices"
@@ -708,11 +967,11 @@
    "valid_from": null,
    "valid_to": null,
    "source_refs": [
-    "MF 5",
+    "MoF Mandatory Fields V1.1 (28 Oct 2026) field 5",
     "IBR-154-AE",
     "GL §10.4"
    ],
-   "description": "Transaction-type flags derivable (8 binary flags)"
+   "description": "Invoice transaction type code present as 8 binary flags (mandatory field 5); deriving each flag from the questionnaire stays a Reviewer judgement"
   },
   {
    "code": "RC-20",
@@ -739,6 +998,57 @@
      "volume discount"
     ]
    }
+  },
+  {
+   "code": "RC-21",
+   "severity": "blocker",
+   "evaluator": "customer_link",
+   "applies_to": {
+    "dataset": [
+     "customers",
+     "invoices"
+    ]
+   },
+   "fields": [
+    "customer_id"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "MoF Mandatory Fields V1.1 (28 Oct 2026) fields 21-29 (buyer details must be determinable)",
+    "PRD §6 [P]"
+   ],
+   "description": "One customer record per customer ID; each invoice's customer ID matches exactly one customer (conflicting rows fail; an ambiguous match is not_checked)"
+  },
+  {
+   "code": "RC-22",
+   "severity": "warning",
+   "evaluator": "buyer_trn_preferred",
+   "applies_to": {
+    "dataset": "customers",
+    "buyer_class": [
+     "uae_business",
+     "vat_group_member"
+    ]
+   },
+   "fields": [
+    "trn"
+   ],
+   "valid_from": null,
+   "valid_to": null,
+   "source_refs": [
+    "MoF Mandatory Fields V1.1 (28 Oct 2026) field 24: VAT-registered UAE buyers should provide the TRN"
+   ],
+   "description": "UAE business buyer identified by a TIN only: accepted by RC-07, recorded for the Reviewer because a VAT-registered buyer must give its TRN"
   }
- ]
+ ],
+ "aliases": {
+  "country": {
+   "UAE": "AE",
+   "UAE.": "AE",
+   "ARE": "AE",
+   "UNITEDARABEMIRATES": "AE",
+   "THEUNITEDARABEMIRATES": "AE"
+  }
+ }
 }
