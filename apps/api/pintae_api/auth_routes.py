@@ -212,3 +212,11 @@ def patch_user(
         role=body.role,
         disabled=body.disabled,
     )
+
+
+@router.post("/users/{user_id}/reset", status_code=202)
+def reset_user(user_id: uuid.UUID, a: ActorDep, eng: EngineDep, m: MailerDep) -> dict[str, str]:
+    """S-15 Reset sign-in: a new invitation to the user's address (TRD 8.1 (c))."""
+    a.require(OWNER)
+    iid = identity.reset_user(eng, m, firm_id=a.firm_id, actor_id=a.user_id, user_id=user_id)
+    return {"invite_id": str(iid)}

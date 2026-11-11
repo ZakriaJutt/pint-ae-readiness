@@ -212,6 +212,7 @@ def test_it02_preparer_cannot_decide(env: Env) -> None:
             json={"email": "y@firm.test", "role": "preparer"},
         ),
         c.get("/api/v1/users", headers=a.h("preparer")),
+        c.post(f"/api/v1/users/{a.users['reviewer']}/reset", headers=a.h("preparer")),
         c.patch(
             f"/api/v1/users/{a.users['owner']}", headers=a.h("reviewer"), json={"disabled": True}
         ),

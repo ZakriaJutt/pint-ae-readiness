@@ -196,11 +196,14 @@ def _pending(eng: Engine, token: str | None, stages: tuple[str, ...]) -> Resolve
 
 
 def _enrolment(s: Session, user: User) -> dict[str, Any]:
-    """A fresh TOTP secret for a user whose enrolment is not confirmed."""
+    """A fresh TOTP secret held as pending (B2-001). The confirmed secret, if any, stays
+    valid until a code from the pending one is confirmed in the same ``enrol`` session.
+
+    An ``enrol`` session is created only after a fresh proof: an Owner-issued invitation
+    (first enrolment or S-15 reset) or a recovery code. Never after a password or a reset
+    link alone."""
     secret = auth.new_totp_secret()
-    user.totp_secret_enc = auth.seal_totp_secret(secret, user.id)
-    user.totp_confirmed_at = None
-    user.totp_last_step = None
+    user.totp_pending_secret_enc = auth.seal_totp_secret(secret, user.id)
     return {
         "totp_secret": auth.totp_secret_b32(secret),
         "otpauth_uri": auth.otpauth_uri(secret, user.email),
@@ -323,19 +326,28 @@ def accept_invite(eng: Engine, *, token: str, password: str, client: str) -> Iss
         problems = auth.password_problems(password, inv.email)
         if problems:
             raise DomainError(422, "password_refused", {"problems": problems})
-        if _user_exists(eng, inv.email):
-            raise DomainError(409, "email_in_use")
-        uid = uuid.uuid4()
-        user = User(
-            id=uid,
-            firm_id=fid,
-            email=inv.email,
-            role=inv.role,
-            password_hash=auth.hash_password(password),
-            totp_secret_enc=b"",
-        )
-        extra = _enrolment(s, user)
-        s.add(user)
+        if inv.user_id is not None:  # S-15 Owner reset: re-enrol the existing user
+            existing = s.get(User, inv.user_id, with_for_update=True)
+            if existing is None or existing.disabled_at is not None:
+                raise DomainError(410, "invite_invalid_or_expired")
+            user, uid = existing, existing.id
+            user.password_hash = auth.hash_password(password)
+            _end_sessions(s, uid)
+            extra = _enrolment(s, user)
+        else:
+            if _user_exists(eng, inv.email):
+                raise DomainError(409, "email_in_use")
+            uid = uuid.uuid4()
+            user = User(
+                id=uid,
+                firm_id=fid,
+                email=inv.email,
+                role=inv.role,
+                password_hash=auth.hash_password(password),
+                totp_secret_enc=b"",
+            )
+            extra = _enrolment(s, user)
+            s.add(user)
         inv.used_at = func.now()
         s.flush()
         sess = _new_session(s, user, "enrol")
@@ -376,8 +388,8 @@ def password_step(eng: Engine, *, email: str, password: str, client: str) -> Iss
         user = s.get(User, row.user_id)
         assert user is not None
         if user.totp_confirmed_at is None:
-            extra = _enrolment(s, user)
-            return Issued(_new_session(s, user, "enrol"), "enrol", user.firm_id, user.id, extra)
+            # B2-001: a password alone never starts an enrolment; the Owner re-invites.
+            raise DomainError(403, "totp_enrolment_required")
         return Issued(_new_session(s, user, "password"), "password", user.firm_id, user.id)
 
 
@@ -419,8 +431,13 @@ def complete_totp(
     with tenancy.session(rs.firm_id, eng) as s:
         user = s.get(User, rs.user_id, with_for_update=True)
         assert user is not None
-        secret = auth.open_totp_secret(user.totp_secret_enc, user.id)
-        step = auth.verify_totp(secret, code, now, user.totp_last_step) if secret else None
+        if rs.stage == "enrol":  # the pending secret, never the confirmed one
+            sealed, last = user.totp_pending_secret_enc, None
+        else:  # a full session only with a confirmed factor
+            sealed = user.totp_secret_enc if user.totp_confirmed_at is not None else None
+            last = user.totp_last_step
+        secret = auth.open_totp_secret(sealed, user.id) if sealed else None
+        step = auth.verify_totp(secret, code, now, last) if secret else None
         if step is None:
             ok = False
         else:
@@ -428,8 +445,19 @@ def complete_totp(
             user.totp_last_step = step
             extra: dict[str, Any] = {}
             if rs.stage == "enrol":
+                user.totp_secret_enc = user.totp_pending_secret_enc or b""
+                user.totp_pending_secret_enc = None
                 user.totp_confirmed_at = func.now()
                 extra["recovery_codes"] = _issue_recovery_codes(s, user)
+                s.execute(  # sessions started under the old factor end
+                    update(SessionRow)
+                    .where(
+                        SessionRow.user_id == user.id,
+                        SessionRow.id != rs.session_id,
+                        SessionRow.ended_at.is_(None),
+                    )
+                    .values(ended_at=func.now())
+                )
             new = _promote(s, rs.session_id, "full")
             audit.record(
                 s,
@@ -448,7 +476,9 @@ def complete_totp(
 
 def recovery_step(eng: Engine, *, token: str | None, code: str, client: str) -> Issued:
     """S-18 (b): a single-use recovery code instead of the TOTP code, then forced
-    re-enrolment: the session moves to ``enrol`` with a new TOTP secret."""
+    re-enrolment: the session moves to ``enrol`` with a new pending TOTP secret. Its only
+    permitted action is confirming that secret. The old TOTP and the other recovery codes
+    stay valid until then (B2-001)."""
     rs = _pending(eng, token, ("password",))
     keys = [_client_key(client), _account_key(str(rs.user_id))]
     with tenancy.global_session(eng) as s:
@@ -579,6 +609,9 @@ def complete_reset(eng: Engine, *, token: str, password: str, client: str) -> Is
         assert user is not None
         if user.disabled_at is not None:
             raise DomainError(410, "reset_invalid_or_expired")
+        if user.totp_confirmed_at is None:
+            # B2-001: a reset link alone never starts an enrolment; the Owner re-invites.
+            raise DomainError(403, "totp_enrolment_required")
         problems = auth.password_problems(password, user.email)
         if problems:
             raise DomainError(422, "password_refused", {"problems": problems})
@@ -593,12 +626,65 @@ def complete_reset(eng: Engine, *, token: str, password: str, client: str) -> Is
             object_id=user.id,
             actor_id=user.id,
         )
-        stage = "password" if user.totp_confirmed_at is not None else "enrol"
-        extra = _enrolment(s, user) if stage == "enrol" else {}
-        return Issued(_new_session(s, user, stage), stage, fid, user.id, extra)
+        return Issued(_new_session(s, user, "password"), "password", fid, user.id)
 
 
 # --------------------------------------------------------------------------- users (S-15)
+
+
+def reset_user(
+    eng: Engine, mailer: Mailer, *, firm_id: uuid.UUID, actor_id: uuid.UUID, user_id: uuid.UUID
+) -> uuid.UUID:
+    """S-15 "Reset sign-in" (TRD 8.1 (c)): the Owner ends the user's sessions, makes the
+    password unusable and e-mails a new invitation to the same address. Accepting it sets a
+    new password and requires TOTP enrolment in that same flow. An Owner cannot reset
+    themself (that is the vendor path, 8.1 (d))."""
+    cfg = get_settings()
+    if user_id == actor_id:
+        raise DomainError(409, "cannot_reset_self")
+    token = auth.new_token()
+    with tenancy.session(firm_id, eng) as s:
+        user = s.get(User, user_id, with_for_update=True)
+        if user is None:
+            raise DomainError(404, "not_found", {"object_type": "user", "object_id": str(user_id)})
+        if user.disabled_at is not None:
+            raise DomainError(409, "user_disabled")
+        firm = s.get(Firm, firm_id)
+        assert firm is not None
+        ended = _end_sessions(s, user.id)
+        user.password_hash = "!reset"  # noqa: S105 - unusable marker: no password verifies
+        user.totp_pending_secret_enc = None
+        s.execute(
+            update(Invite)
+            .where(
+                Invite.email == user.email, Invite.used_at.is_(None), Invite.revoked_at.is_(None)
+            )
+            .values(revoked_at=func.now())
+        )
+        inv = Invite(
+            firm_id=firm_id,
+            created_by=actor_id,
+            email=user.email,
+            role=user.role,
+            user_id=user.id,
+            token_hash=auth.token_hash(token),
+            expires_at=func.now() + text(f"interval '{int(cfg.invite_valid_hours)} hours'"),
+        )
+        s.add(inv)
+        s.flush()
+        audit.record(
+            s,
+            firm_id=firm_id,
+            action="user.sign_in_reset",
+            object_type="user",
+            object_id=user.id,
+            actor_id=actor_id,
+            detail={"sessions_ended": ended},
+        )
+        email, role, firm_name, invite_id = user.email, user.role, firm.legal_name, inv.id
+    link = f"{cfg.public_base_url.rstrip('/')}/invite/{token}"
+    mailer.send(invite_message(email, firm_name, role, link, cfg.invite_valid_hours))
+    return invite_id
 
 
 def list_users(s: Session) -> list[dict[str, Any]]:

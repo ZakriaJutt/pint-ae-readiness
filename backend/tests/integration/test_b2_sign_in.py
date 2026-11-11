@@ -422,3 +422,145 @@ def test_pending_session_expires(env: Env, addresses: list[str]) -> None:
     env.client.cookies.clear()
     r = env.client.post("/api/v1/auth/totp", headers=_h(pw), json={"code": _code(env, m.secret, 1)})
     assert r.status_code == 401
+
+
+# --------------------------------------------------------------------------- B2-001 (round 4)
+
+
+def _recovery_then_abandon(env: Env, m: Member) -> dict[str, Any]:
+    """Password plus a recovery code, then the tab is closed before the new TOTP is set up."""
+    c = env.client
+    pw = _cookie(_login(env, m.email))
+    c.cookies.clear()
+    r = c.post("/api/v1/auth/recovery-code", headers=_h(pw), json={"code": m.codes[0]})
+    assert r.status_code == 200 and r.json()["stage"] == "enrol"
+    enrol = _cookie(r)
+    c.cookies.clear()
+    # The restricted session allows enrolment only.
+    assert c.get("/api/v1/dashboard", headers=_h(enrol)).status_code == 401
+    assert c.post("/api/v1/auth/recovery-codes/regenerate", headers=_h(enrol)).status_code == 401
+    rc = c.post("/api/v1/auth/recovery-code", headers=_h(enrol), json={"code": m.codes[1]})
+    assert rc.status_code == 401
+    body: dict[str, Any] = r.json()
+    return body
+
+
+def test_b2_001_abandoned_reenrolment_keeps_the_old_factor(env: Env, addresses: list[str]) -> None:
+    c = env.client
+    firm = env.firm()
+    m = _join(env, firm, _addr(addresses, "lostphone"))
+    attacker_secret = _recovery_then_abandon(env, m)["totp_secret"]
+    with env.admin.connect() as conn:
+        confirmed = conn.execute(
+            text("SELECT totp_confirmed_at FROM users WHERE email = :e"), {"e": m.email}
+        ).scalar_one()
+    assert confirmed is not None  # the confirmed factor was not cleared
+    # Password alone: only the password stage, never an enrolment with a new secret.
+    r = _login(env, m.email)
+    assert r.status_code == 200 and r.json() == {"stage": "password"}
+    pw = _cookie(r)
+    c.cookies.clear()
+    # The abandoned pending secret is useless on the password stage.
+    bad = c.post("/api/v1/auth/totp", headers=_h(pw), json={"code": _code(env, attacker_secret)})
+    assert bad.status_code == 401
+    # The old authenticator still works.
+    r = c.post("/api/v1/auth/totp", headers=_h(pw), json={"code": _code(env, m.secret, 1)})
+    assert r.status_code == 200 and r.json()["stage"] == "full"
+
+
+def test_b2_001_reset_link_after_abandoned_reenrolment_still_needs_the_old_totp(
+    env: Env, addresses: list[str]
+) -> None:
+    c = env.client
+    firm = env.firm()
+    m = _join(env, firm, _addr(addresses, "lostphone2"))
+    attacker_secret = _recovery_then_abandon(env, m)["totp_secret"]
+    c.post("/api/v1/auth/password-reset", json={"email": m.email})
+    tok = mailpit.link_token(mailpit.latest_text(m.email, count=2), "recover")
+    r = c.post(f"/api/v1/auth/password-reset/{tok}", json={"password": "mailbox-only-attacker-77"})
+    assert r.status_code == 200 and r.json() == {"stage": "password"}
+    pending = _cookie(r)
+    c.cookies.clear()
+    bad = c.post(
+        "/api/v1/auth/totp", headers=_h(pending), json={"code": _code(env, attacker_secret)}
+    )
+    assert bad.status_code == 401
+    assert c.get("/api/v1/dashboard", headers=_h(pending)).status_code == 401
+
+
+def test_b2_001_confirming_the_new_factor_replaces_the_old_one(
+    env: Env, addresses: list[str]
+) -> None:
+    c = env.client
+    firm = env.firm()
+    m = _join(env, firm, _addr(addresses, "swap"))
+    other = _cookie(_login(env, m.email))  # a second, pending session under the old factor
+    pw = _cookie(_login(env, m.email))
+    c.cookies.clear()
+    r = c.post("/api/v1/auth/recovery-code", headers=_h(pw), json={"code": m.codes[0]})
+    new_secret, enrol = r.json()["totp_secret"], _cookie(r)
+    c.cookies.clear()
+    r = c.post("/api/v1/auth/totp", headers=_h(enrol), json={"code": _code(env, new_secret)})
+    assert r.status_code == 200 and r.json()["stage"] == "full"
+    assert len(r.json()["recovery_codes"]) == 10
+    c.cookies.clear()
+    late = c.post("/api/v1/auth/totp", headers=_h(other), json={"code": _code(env, m.secret, 1)})
+    assert late.status_code == 401  # sessions started under the old factor ended
+    pw = _cookie(_login(env, m.email))
+    c.cookies.clear()
+    old = c.post("/api/v1/auth/totp", headers=_h(pw), json={"code": _code(env, m.secret, 1)})
+    assert old.status_code == 401
+
+
+def test_b2_001_unenrolled_account_needs_an_owner_reset(env: Env, addresses: list[str]) -> None:
+    """An invitation accepted but enrolment never finished: neither the password nor a reset
+    link starts an enrolment; the Owner's reset issues a new invitation, and accepting it
+    requires TOTP enrolment in that same flow."""
+    c = env.client
+    firm = env.firm()
+    email = _addr(addresses, "unenrolled")
+    tok = _invite(env, firm, email)
+    r = c.post(f"/api/v1/invites/{tok}/accept", json={"password": PASSWORD})
+    assert r.json()["stage"] == "enrol"  # ... and abandoned
+    r = _login(env, email)
+    assert r.status_code == 403 and r.json()["reason"] == "totp_enrolment_required"
+    assert "set-cookie" not in r.headers
+    c.post("/api/v1/auth/password-reset", json={"email": email})
+    rtok = mailpit.link_token(mailpit.latest_text(email, count=2), "recover")
+    r = c.post(f"/api/v1/auth/password-reset/{rtok}", json={"password": "mailbox-only-attacker-77"})
+    assert r.status_code == 403 and "set-cookie" not in r.headers
+    assert _login(env, email).status_code == 403  # the password did not change
+    uid = next(
+        u["id"]
+        for u in c.get("/api/v1/users", headers=firm.h()).json()["items"]
+        if u["email"] == email
+    )
+    # Only the Owner resets; not themself; not across firms.
+    assert c.post(f"/api/v1/users/{uid}/reset", headers=firm.h("reviewer")).status_code == 403
+    own = str(firm.users["owner"])
+    assert c.post(f"/api/v1/users/{own}/reset", headers=firm.h()).status_code == 409
+    assert c.post(f"/api/v1/users/{uid}/reset", headers=env.firm("Firm B").h()).status_code == 404
+    r = c.post(f"/api/v1/users/{uid}/reset", headers=firm.h())
+    assert r.status_code == 202
+    itok = mailpit.link_token(mailpit.latest_text(email, count=3), "invite")
+    assert _login(env, email).status_code == 401  # the old password is unusable now
+    new_pw = "orchard-lattice-ember-5"
+    r = c.post(f"/api/v1/invites/{itok}/accept", json={"password": new_pw})
+    assert r.status_code == 200 and r.json()["stage"] == "enrol"
+    secret, enrol = r.json()["totp_secret"], _cookie(r)
+    c.cookies.clear()
+    r = c.post("/api/v1/auth/totp", headers=_h(enrol), json={"code": _code(env, secret)})
+    assert r.status_code == 200 and r.json()["stage"] == "full"
+    assert _login(env, email, new_pw).json() == {"stage": "password"}
+
+
+def test_b2_001_owner_reset_ends_sessions_of_an_enrolled_user(
+    env: Env, addresses: list[str]
+) -> None:
+    c = env.client
+    firm = env.firm()
+    m = _join(env, firm, _addr(addresses, "resetme"))
+    uid = c.get("/api/v1/auth/session", headers=m.h()).json()["user_id"]
+    assert c.post(f"/api/v1/users/{uid}/reset", headers=firm.h()).status_code == 202
+    assert c.get("/api/v1/dashboard", headers=m.h()).status_code == 401  # IT-18 Owner reset
+    assert _login(env, m.email).status_code == 401

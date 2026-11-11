@@ -40,7 +40,7 @@ NAMING = {
 
 
 # The migration head this code expects; /readyz compares it with alembic_version.
-SCHEMA_REVISION = "0006"
+SCHEMA_REVISION = "0007"
 
 
 class Base(DeclarativeBase):
@@ -316,6 +316,9 @@ class User(TenantMixin, Base):
     disabled_at: Mapped[datetime | None]
     totp_confirmed_at: Mapped[datetime | None]  # B2: enrolment completed with a valid code
     totp_last_step: Mapped[int | None] = mapped_column(BigInteger)  # B2: replay guard
+    # B2-001: a new secret waits here until a code from it is confirmed; the confirmed
+    # secret above stays valid until then.
+    totp_pending_secret_enc: Mapped[bytes | None]
     __table_args__ = (CheckConstraint(_in("role", ("owner", "reviewer", "preparer")), name="role"),)
 
 
@@ -342,6 +345,8 @@ class Invite(TenantMixin, Base):
     expires_at: Mapped[datetime]
     used_at: Mapped[datetime | None]
     revoked_at: Mapped[datetime | None]
+    # B2-001: set for an Owner-issued re-enrolment of an existing user (S-15 reset).
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     __table_args__ = (CheckConstraint(_in("role", ("owner", "reviewer", "preparer")), name="role"),)
 
 
