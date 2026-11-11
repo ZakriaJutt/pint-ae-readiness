@@ -32,3 +32,13 @@ def reference_session(engine: Engine | None = None) -> Iterator[Session]:
     with Session(eng, expire_on_commit=False) as s, s.begin():
         s.execute(text("SET TRANSACTION READ ONLY"))
         yield s
+
+
+@contextmanager
+def global_session(engine: Engine | None = None) -> Iterator[Session]:
+    """Sign-in steps that happen before a firm is known (B2): the security-definer lookups
+    (``pintae_resolve_session``, ``pintae_login_lookup``, ``pintae_token_firm``) and the
+    sign-in throttle. No firm is set, so tenant tables return nothing."""
+    eng = engine or app_engine()
+    with Session(eng, expire_on_commit=False) as s, s.begin():
+        yield s

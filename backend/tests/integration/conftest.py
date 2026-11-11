@@ -1,5 +1,9 @@
 """Integration fixtures: a freshly migrated pintae_test, published CAL-1, CAL-2 and RP-1,
-and helpers that seed firms, users and sessions."""
+and helpers that seed firms, users and sessions.
+
+The seeded sessions are the test-only stand-in for signing in (the B1 fake): they are real
+``sessions`` rows used through the real cookie and anti-forgery checks. The sign-in flow
+itself is tested end to end in ``test_b2_sign_in.py`` against Mailpit."""
 
 from __future__ import annotations
 
@@ -18,11 +22,13 @@ from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, text
 
+from pintae_api.deps import SESSION_COOKIE
 from pintae_api.main import create_app
+from pintae_core.auth import csrf_token
 from pintae_core.config import get_settings
 from pintae_core.models import TENANT_TABLES
 from pintae_core.publication import ensure_publisher, publish_calendar, publish_rule_pack
-from pintae_core.storage import LocalObjectStore
+from pintae_core.storage import LocalObjectStore, ObjectStore
 from pintae_rulepacks import load_data
 from pintae_rules.packs import content_hash
 from pintae_worker.main import run_once
@@ -98,6 +104,7 @@ def _clean_tenant_rows(request: pytest.FixtureRequest) -> None:
         conn.execute(text("DELETE FROM rule_packs WHERE code <> 'RP-1'"))
         conn.execute(text("ALTER TABLE rule_packs ENABLE TRIGGER rule_packs_immutable"))
         conn.execute(text("DELETE FROM system_flags"))
+        conn.execute(text("DELETE FROM auth_attempts"))  # sign-in throttle, per test
         extra_cal = "SELECT id FROM calendar_versions WHERE code NOT IN ('CAL-1', 'CAL-2')"
         conn.execute(text(f"DELETE FROM calendar_rules WHERE calendar_version_id IN ({extra_cal})"))
         conn.execute(text(f"DELETE FROM provisions WHERE calendar_version_id IN ({extra_cal})"))
@@ -114,11 +121,14 @@ def _clean_tenant_rows(request: pytest.FixtureRequest) -> None:
 @dataclass
 class Firm:
     id: uuid.UUID
-    tokens: dict[str, str]  # role -> bearer token
+    tokens: dict[str, str]  # role -> session token (cookie value)
     users: dict[str, uuid.UUID]
 
     def h(self, role: str = "owner", **extra: str) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self.tokens[role]}", **extra}
+        """Test-only: a seeded full session sent as the session cookie with its
+        anti-forgery token, as a signed-in browser would (B2)."""
+        tok = self.tokens[role]
+        return {"Cookie": f"{SESSION_COOKIE}={tok}", "X-CSRF-Token": csrf_token(tok), **extra}
 
 
 def make_firm(admin: Engine, name: str) -> Firm:
@@ -141,8 +151,8 @@ def make_firm(admin: Engine, name: str) -> Firm:
             )
             conn.execute(
                 text(
-                    "INSERT INTO sessions (firm_id, user_id, token_hash, last_seen_at, absolute_expires_at) "
-                    "VALUES (:f, :u, :h, now(), :x)"
+                    "INSERT INTO sessions (firm_id, user_id, token_hash, last_seen_at, "
+                    "absolute_expires_at, stage) VALUES (:f, :u, :h, now(), :x, 'full')"
                 ),
                 {
                     "f": fid,
@@ -160,7 +170,7 @@ class Env:
     admin: Engine
     app: Engine
     client: TestClient
-    store: LocalObjectStore
+    store: ObjectStore
     publisher_id: uuid.UUID
     clock: list[datetime]
 
@@ -184,7 +194,7 @@ def env(
     store = LocalObjectStore(tmp_path / "storage")
     clock = [datetime.now(tz=UTC)]
     app = create_app(engine=app_engine, store=store, clock=lambda: clock[0])
-    with TestClient(app) as client:
+    with TestClient(app, base_url="https://testserver") as client:
         yield Env(admin_engine, app_engine, client, store, publisher_id, clock)
 
 

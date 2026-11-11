@@ -1,6 +1,6 @@
 # AGENTS.md — PINT AE Readiness Desk
 
-Canonical instructions for any agent or developer working in this repository. Build milestone B1 (foundation and deterministic core, started 2026-11-11 on the owner's authorisation before the Phase 0 gate) exists on branch `feat/b1-foundation`: Python packages, migrations, a minimal API and worker, and tests. There is no web frontend, no sign-in flow and no real provider integration. Commands marked **exists** in section 7 run; all others remain proposed.
+Canonical instructions for any agent or developer working in this repository. Build milestone B1 (foundation and deterministic core, started 2026-11-11 on the owner's authorisation before the Phase 0 gate) exists on branch `feat/b1-foundation`: Python packages, migrations, a minimal API and worker, and tests. Milestone B2 (branch `feat/b2-local-auth`) adds real sign-in (password plus TOTP, invitations, sessions with anti-forgery tokens, throttle, password reset, recovery codes), e-mail through SMTP to the local Mailpit inbox, and object storage through the S3 API to local MinIO. There is no web frontend, no vendor sign-in and no real provider account. Commands marked **exists** in section 7 run; all others remain proposed.
 
 ## 1. Reading order
 
@@ -55,12 +55,18 @@ Label every number as [C], [S: SRC-nn], [A] or [P] (Decision.md section 0). An a
 | Asia/Dubai date helper | `packages/rules/pintae_rules/dates.py` |
 | Tenancy session (the only way to open a database session) | `packages/core/pintae_core/tenancy.py` |
 | ORM models, tenant and global table lists, expected migration head | `packages/core/pintae_core/models.py` |
-| Storage-key builder and object-store interface (local fake) | `packages/core/pintae_core/storage.py` |
+| Storage-key builder and object-store interface (S3 API for MinIO and S3; directory fake for tests) | `packages/core/pintae_core/storage.py` |
 | Jobs: enqueue, claim, lease sweep, compare-and-set completion, heartbeat | `packages/core/pintae_core/jobs.py` |
 | Audit events | `packages/core/pintae_core/audit.py` |
 | Idempotency keys | `packages/core/pintae_core/idempotency.py` |
 | Runs, snapshots, status read, report pins and currency | `packages/core/pintae_core/readiness.py` |
 | Verified reference-data loaders (recompute the content hash; refuse a mismatch): `load_pack`, `current_pack`, `current_calendar`, `calendar_by_code` | `packages/core/pintae_core/readiness.py` |
+| Sign-in primitives: password hashing and policy, TOTP, TOTP-secret sealing, tokens, anti-forgery tokens, recovery codes | `packages/core/pintae_core/auth.py` (breached-password set: `breached.py`) |
+| Sign-in flows: invitations, password and TOTP steps, recovery codes, password reset, sign-out, users | `packages/core/pintae_core/identity.py` |
+| Session cookie, anti-forgery check, client address (API) | `apps/api/pintae_api/deps.py` |
+| Outgoing e-mail (SMTP; Mailpit locally) | `packages/core/pintae_core/mail.py` |
+| Generated files and CSV formula escaping | `packages/core/pintae_core/exports.py` |
+| Session before a firm is known (sign-in only) | `packages/core/pintae_core/tenancy.py` `global_session` |
 | Rule-pack and calendar publication (two steps) and withdrawal (`withdraw`, status only, terminal) | `packages/core/pintae_core/publication.py` |
 | Rule engine and evaluators | `packages/rules/pintae_rules/engine.py` |
 | Rule-pack loading, hashing, selection by effective date | `packages/rules/pintae_rules/packs.py` |
@@ -93,8 +99,8 @@ Label every number as [C], [S: SRC-nn], [A] or [P] (Decision.md section 0). An a
 - A change to a rule, the calendar, the segment function or the status function needs a unit test with a synthetic fixture and an expected outcome first.
 - A new endpoint is added to the tenant and permission suite (IT-01, IT-02) in the same change.
 - Fixtures are synthetic (FX-A to FX-E). Never commit customer data, credentials, tokens or real TRNs.
-- Commands. **Exists** (B1, run from the repository root): `make venv`, `make dev` (database, migrations, reference data, worker, API on port 8105, waits for `/readyz`, which also verifies the reference data in force against its content hash), `make dev-check` (OPS-04), `make test` (rebuilds the `pintae_test` schema, then unit and integration tests), `make lint` (ruff), `make typecheck` (mypy strict), `make arch` (ARCH-01, `scripts/check_imports.py`), `make parity` (`scripts/check_schema_parity.py`), `python scripts/load_rulepack.py <file> --publisher-email <e> [--confirm-hash <hex>]`. **Still proposed**: `make e2e`, `scripts/run_checks_cli`, `scripts/seed_synthetic`, `scripts/restore_drill`, `scripts/sweep_expired`.
-- Local environment: Python 3.12 virtual environment at `backend/.venv`; PostgreSQL `pintae_dev` and `pintae_test` used through the role `pintae_app` (NOSUPERUSER NOBYPASSRLS); the owner role only for migrations and publication. Redis database index 4 is assigned but unused (TRD AD-02). Docker is not used locally; the Compose setup in TRD section 7 stays proposed.
+- Commands. **Exists** (B1, run from the repository root): `make venv`, `make dev` (database, migrations, reference data, worker, API on port 8105, waits for `/readyz`, which also verifies the reference data in force against its content hash), `make dev-check` (OPS-04), `make test` (rebuilds the `pintae_test` schema, then unit and integration tests), `make lint` (ruff), `make typecheck` (mypy strict), `make arch` (ARCH-01, `scripts/check_imports.py`), `make parity` (`scripts/check_schema_parity.py`), `python scripts/load_rulepack.py <file> --publisher-email <e> [--confirm-hash <hex>]`, `python scripts/create_firm.py --name <n> --owner-email <e>` (B2: vendor onboarding, e-mails the first Owner's invitation). **Still proposed**: `make e2e`, `scripts/run_checks_cli`, `scripts/seed_synthetic`, `scripts/restore_drill`, `scripts/sweep_expired`.
+- Local environment: Python 3.12 virtual environment at `backend/.venv`; PostgreSQL `pintae_dev` and `pintae_test` used through the role `pintae_app` (NOSUPERUSER NOBYPASSRLS); the owner role only for migrations and publication. Redis database index 4 is assigned but unused (TRD AD-02). B2: copy `backend/.env.example` to `backend/.env` (gitignored) and fill in `PINTAE_SECRET_KEY`, `PINTAE_TOTP_KEY` and the local MinIO credentials; Mailpit at SMTP `127.0.0.1:1025` (inbox http://127.0.0.1:8025) and MinIO at `http://127.0.0.1:9000`, bucket `pintae-dev`, must be running for the B2 integration tests (they skip with a reason otherwise). Integration tests sign in with seeded `full` sessions sent as the real cookie with its anti-forgery token (test-only); `test_b2_sign_in.py` covers the real sign-in. Docker is not used locally; the Compose setup in TRD section 7 stays proposed.
 
 ## 8. When something changes, update these
 

@@ -10,7 +10,18 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-from pintae_core.models import GLOBAL_TABLES, TENANT_TABLES
+# The table lists as they stood at revision 0001. Frozen here so that later additions to
+# pintae_core.models (B2: migration 0005) do not change what this revision does.
+TENANT_TABLES = (
+    "firms", "users", "sessions", "client_entities", "segment_assessments", "uploads",
+    "staged_rows", "column_mappings", "value_mappings", "check_runs", "findings",
+    "finding_exceptions", "readiness_snapshots", "asp_statuses", "reports", "jobs",
+    "idempotency_keys", "audit_events",
+)  # fmt: skip
+GLOBAL_TABLES = (
+    "vendor_users", "calendar_versions", "calendar_rules", "provisions", "rule_packs", "rules",
+    "publications", "system_flags", "worker_heartbeats",
+)  # fmt: skip
 
 APP_ROLE = "pintae_app"
 

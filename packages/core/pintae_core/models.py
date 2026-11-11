@@ -40,7 +40,7 @@ NAMING = {
 
 
 # The migration head this code expects; /readyz compares it with alembic_version.
-SCHEMA_REVISION = "0004"
+SCHEMA_REVISION = "0005"
 
 
 class Base(DeclarativeBase):
@@ -72,6 +72,10 @@ TENANT_TABLES = (
     "firms",
     "users",
     "sessions",
+    "invites",
+    "recovery_codes",
+    "password_resets",
+    "files",
     "client_entities",
     "segment_assessments",
     "uploads",
@@ -98,6 +102,7 @@ GLOBAL_TABLES = (
     "publications",
     "system_flags",
     "worker_heartbeats",
+    "auth_attempts",
 )
 
 
@@ -255,6 +260,22 @@ class SystemFlag(Base):
     set_at: Mapped[datetime]
 
 
+class AuthAttempt(Base):
+    """Sign-in throttle (ASVS 6.3.1). Keys are hashes of an e-mail address or a client
+    address, never the value itself. Global: attempts happen before a firm is known."""
+
+    __tablename__ = "auth_attempts"
+    id: Mapped[uuid.UUID] = _pk()
+    key_hash: Mapped[bytes]
+    kind: Mapped[str]
+    succeeded: Mapped[bool]
+    at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    __table_args__ = (
+        CheckConstraint(_in("kind", ("account", "client")), name="kind"),
+        Index("ix_auth_attempts_key_at", "key_hash", "at"),
+    )
+
+
 class WorkerHeartbeat(Base):
     """Readiness signal for OPS-04 (not in schema.md before B1; added there)."""
 
@@ -286,6 +307,8 @@ class User(TenantMixin, Base):
     password_hash: Mapped[str]
     totp_secret_enc: Mapped[bytes]
     disabled_at: Mapped[datetime | None]
+    totp_confirmed_at: Mapped[datetime | None]  # B2: enrolment completed with a valid code
+    totp_last_step: Mapped[int | None] = mapped_column(BigInteger)  # B2: replay guard
     __table_args__ = (CheckConstraint(_in("role", ("owner", "reviewer", "preparer")), name="role"),)
 
 
@@ -296,6 +319,59 @@ class SessionRow(TenantMixin, Base):
     last_seen_at: Mapped[datetime]
     absolute_expires_at: Mapped[datetime]
     ended_at: Mapped[datetime | None]
+    # B2: 'password' (TOTP pending), 'enrol' (TOTP enrolment pending) or 'full'. Only a
+    # 'full' session reaches the application routes.
+    stage: Mapped[str]
+    failed_codes: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    __table_args__ = (CheckConstraint(_in("stage", ("password", "enrol", "full")), name="stage"),)
+
+
+class Invite(TenantMixin, Base):
+    __tablename__ = "invites"
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    email: Mapped[str] = mapped_column(CITEXT)
+    role: Mapped[str]
+    token_hash: Mapped[bytes] = mapped_column(unique=True)
+    expires_at: Mapped[datetime]
+    used_at: Mapped[datetime | None]
+    revoked_at: Mapped[datetime | None]
+    __table_args__ = (CheckConstraint(_in("role", ("owner", "reviewer", "preparer")), name="role"),)
+
+
+class RecoveryCode(TenantMixin, Base):
+    __tablename__ = "recovery_codes"
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    code_hash: Mapped[str]
+    used_at: Mapped[datetime | None]
+
+
+class PasswordReset(TenantMixin, Base):
+    __tablename__ = "password_resets"
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    token_hash: Mapped[bytes] = mapped_column(unique=True)
+    expires_at: Mapped[datetime]
+    used_at: Mapped[datetime | None]
+
+
+class FileRow(TenantMixin, Base):
+    """Generated files (fix lists, reports, exports). Served only through GET /files/{id}."""
+
+    __tablename__ = "files"
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    purpose: Mapped[str]
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("client_entities.id"))
+    storage_key: Mapped[str] = mapped_column(unique=True)
+    sha256: Mapped[bytes]
+    content_type: Mapped[str]
+    download_name: Mapped[str]
+    byte_size: Mapped[int] = mapped_column(BigInteger)
+    expires_at: Mapped[datetime | None]
+    __table_args__ = (
+        CheckConstraint(
+            _in("purpose", ("report", "fix_list", "handoff", "export", "dashboard_export")),
+            name="purpose",
+        ),
+    )
 
 
 class ClientEntity(TenantMixin, Base):

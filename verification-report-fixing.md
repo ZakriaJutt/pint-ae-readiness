@@ -352,3 +352,38 @@ Reviewer's script `_coordination/review/pint-ae-readiness-b1-round3_adversarial.
 | `make dev-check` | Not ready, by name: `reference_data: failed (calendar_content_hash_mismatch)`. `pintae_dev` holds CAL-1 and CAL-2 published before migration 0004, without `content`, and the verified loader refuses them, as intended. Rebuilding `pintae_dev` (drop and recreate its schema, then `make dev`) was not permitted in this session and is left to the lead |
 
 Residual, by design: a superuser owner can still disable a trigger (DDL) or set `session_replication_role`; the test-suite cleanup does this for versions a test published. Documents changed: schema.md (reference-data lifecycle and guard, `calendar_versions.content`, `publications`), TRD.md section 7 (withdrawal), AGENTS.md (utilities index, `/readyz`) and this section.
+
+## 10. B2 build record (2026-11-11): sign-in and local services without external accounts
+
+Owner request of 2026-11-11, branch `feat/b2-local-auth` from `feat/b1-foundation` at `2cbce9d` (the B1-012 round-3 fix, section 9.3). Synthetic data only; no provider account, no secret in git (`backend/.env` is gitignored; `backend/.env.example` holds names only).
+
+Tasks (execution-plan.md): **T-2.2.3** in part (password, TOTP, sessions, invitations, recovery codes, reset links, rate limits, role checks; not the Owner reset, vendor sign-in or support session), **T-2.2.6** in part (S3-API object store, key checks; no expiry sweeper), **T-4.1.2** in part (fix-list export with cell escaping; no dashboard export or handoff pack), **T-4.1.3** in part (invitations, user role change and disable; no grants, export or deletion).
+
+Built:
+- Sign-in as TRD 8.1 specifies (password plus TOTP, not an e-mailed link; AD-05): migration 0005 (`invites`, `recovery_codes`, `password_resets`, `files`, `auth_attempts`; session stages; TOTP enrolment and replay columns; security-definer lookups). `pintae_core.auth` and `pintae_core.identity`; routes in `apps/api/pintae_api/auth_routes.py`. The B1 bearer-token stand-in is gone from the application: `deps.actor` accepts only the `__Host-pintae_session` cookie of a `full` session plus the anti-forgery token on state-changing requests. In tests, seeded `full` sessions remain the test-only stand-in, sent through the same cookie and anti-forgery checks.
+- E-mail through SMTP (`pintae_core.mail`), Mailpit at 127.0.0.1:1025 locally; production selects another SMTP server by settings only.
+- Object storage through the S3 API (`S3ObjectStore`), MinIO at http://127.0.0.1:9000, bucket `pintae-dev`, region `us-east-1`; keys `firms/{firm}/entities/{entity}/source-{dataset}/{uuid}` and `firms/{firm}/generated/{purpose}/{uuid}` (R-13); no public URL and no presigned URL; generated files leave only through `GET /files/{id}` inside the tenancy session.
+- `/readyz` checks the object store bucket through the store interface and the reference data (section 9.3). `scripts/create_firm.py` creates a firm and e-mails its first Owner's invitation (run once against `pintae_dev` and Mailpit: invitation received).
+- Not built and why: vendor sign-in and vendor routes, support sessions (IT-21), Owner reset of a user and vendor Owner reset (IT-18 last two parts), secret store (13.3.1, 13.3.2): no design detail or account needed in B2 scope, recorded as next. OIDC is not in the design and is not needed.
+
+Tests that ran (all against a freshly rebuilt `pintae_test`, Mailpit and MinIO running):
+
+| Test | Command | Result |
+|---|---|---|
+| Unit: TOTP against the RFC 6238 SHA-1 vectors, drift window and replay; password policy and scrypt hashing; TOTP-secret sealing bound to the user; tokens and anti-forgery; recovery codes; UT-15 (`=HYPERLINK("x")` escaped); storage-key checks | `cd backend && .venv/bin/pytest tests/unit/test_auth.py` | Pass (14) |
+| Sign-in end to end with Mailpit (`test_b2_sign_in.py`, 15 tests): invitation read from Mailpit, weak and breached passwords refused, enrolment, TOTP, new token on sign-in, anti-forgery, sign-out invalidates, re-sign-in, TOTP code refused on reuse; cookie attributes; expired and revoked invitations refused (410); only the Owner invites; absolute expiry, role change and disable end sessions, last Owner protected (IT-16); session of firm B refused on firm A's objects and anti-forgery token not transferable; cross-origin refused; account throttle after five failures and client throttle after 30 requests (429); five wrong codes end the pending session; password reset by mailed link still requires TOTP, link refused on reuse and after expiry, no mail for an unknown address (IT-18 first three parts); recovery code works once and forces re-enrolment (IT-18 recovery part); pending session expiry | `cd backend && .venv/bin/pytest tests/integration/test_b2_sign_in.py` | Pass (15) |
+| Storage with MinIO (`test_b2_storage.py`, 2 tests): uploads stored under the firm, entity and purpose prefix and parsed by the worker from MinIO (IT-15 against MinIO), fix-list export stored under `generated/fix_list`, downloaded by its firm with the generator's content type, refused for another firm (404) and without a session (401), anonymous bucket and object reads refused by MinIO (403), test objects removed | `cd backend && .venv/bin/pytest tests/integration/test_b2_storage.py` | Pass (2); bucket checked empty of `firms/` objects afterwards |
+| IT-01 and IT-02 extended to the new endpoints (export, file download, user change cross-firm → 404; invitations and users by Preparer or Reviewer → 403) | `cd backend && .venv/bin/pytest tests/integration/test_tenancy_and_permissions.py` | Pass (10) |
+
+| Command (B2 head) | Result |
+|---|---|
+| `make test` (rebuilds `pintae_test`) | 187 passed, 0 failed (92 unit, 95 integration) |
+| `make lint` | Pass, 69 files formatted |
+| `make typecheck` (69 files) | Pass, 0 errors |
+| `make arch` | Pass, 0 violations |
+| `make parity` | Equal, single head 0005 |
+| `make dev-check` | Not ready, by name: only `reference_data: failed (calendar_content_hash_mismatch)`; database, migrations (head 0005 applied to `pintae_dev`), worker heartbeat and storage (MinIO bucket) report ok. Cause: `pintae_dev` still holds CAL-1 and CAL-2 published before migration 0004, without `content` (section 9.3). Rebuilding `pintae_dev` was not permitted in this session; after the lead drops and recreates its schema, `make dev` republishes the reference data |
+
+OWASP ASVS 5.0.0 [S: SRC-22], requirement IDs as selected in TRD 8.8 (status column there). Implemented in B2: 6.2.1; 6.3.1; 6.3.3; 6.3.6; 6.4.3; 6.5.1, 6.5.2, 6.5.3; 7.2.1, 7.2.3, 7.2.4; 7.3.1, 7.3.2; 7.4.1, 7.4.2; 3.3.1, 3.3.2, 3.3.4; 3.5.1; 4.1.1 (downloads); 8.2.1, 8.2.2, 8.3.1, 8.4.1 for users and invitations (3.4.1 and 3.4.3 were already in B1). Partial: 6.2.12 (offline common-password set, not a breach corpus); 6.4.4 (recovery (a) and (b) only). Not implemented: 13.3.1, 13.3.2 (no secret store); 4.1.3, 4.2.1 (no proxy); 5.4.3 (antivirus); 8.4.2 (vendor access); 16.x only in part (sign-in results are audited, log controls unchanged from B1). These are selected controls, not a claim of ASVS compliance.
+
+Document changes: TRD.md (5.1 rows and build note, 8.1 build detail, 8.8 statuses), schema.md (users, sessions, invites, recovery_codes, password_resets, files, new `auth_attempts`, sign-in functions, storage note), App-flow.md (S-02 activation signs in), AGENTS.md (state line, utilities index, commands, local environment), this section. Migration 0001 now carries its own frozen table lists instead of importing them from the models, so later tables (0005) do not change what 0001 does.

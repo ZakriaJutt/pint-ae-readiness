@@ -20,8 +20,28 @@ def test_public_url_must_be_https_public_outside_local() -> None:
         Settings(env="production", public_base_url="http://desk.example.ae")
     with pytest.raises(ValidationError, match="public host"):
         Settings(env="staging", public_base_url="https://localhost")
-    assert Settings(env="production", public_base_url="https://desk.example.ae").env == "production"
+    prod = Settings(
+        env="production",
+        public_base_url="https://desk.example.ae",
+        storage_backend="s3",
+        s3_access_key_id="k",
+        s3_secret_access_key="s",
+    )
+    assert prod.env == "production"
     assert Settings(env="local").public_base_url.startswith("http://localhost")
+
+
+def test_b2_sign_in_keys_and_storage_backend_are_validated() -> None:
+    with pytest.raises(ValidationError, match="PINTAE_SECRET_KEY"):
+        Settings(secret_key="short")
+    with pytest.raises(ValidationError, match="PINTAE_TOTP_KEY"):
+        Settings(totp_key="AAAA")
+    with pytest.raises(ValidationError, match="s3 outside local"):
+        Settings(
+            env="production", public_base_url="https://desk.example.ae", storage_backend="local"
+        )
+    with pytest.raises(ValidationError, match="ACCESS_KEY_ID"):
+        Settings(storage_backend="s3", s3_access_key_id=None, s3_secret_access_key=None)
 
 
 def test_ops04_start_fails_naming_the_database() -> None:

@@ -50,7 +50,9 @@ def _firm_a_objects(env: Env) -> tuple[flow.Any, dict[str, str]]:
     run = flow.run(env, a, eid)
     finding = env.client.get(f"/api/v1/entities/{eid}/findings", headers=a.h()).json()["items"][0]
     rep = env.client.post(f"/api/v1/entities/{eid}/reports", headers=a.h()).json()
+    exported = env.client.post(f"/api/v1/entities/{eid}/findings/exports", headers=a.h()).json()
     return a, {
+        "file": exported["file_id"],
         "entity": eid,
         "upload": ids["customers"],
         "mapping": maps["customers"],
@@ -86,6 +88,10 @@ def test_it01_cross_firm_requests_return_404_with_audit(env: Env) -> None:
         c.post(f"/api/v1/reports/{o['report']}/approve", headers=b.h(), json={"pins": {}}),
         c.post(f"/api/v1/entities/{o['entity']}/runs", headers=b.h(**{"Idempotency-Key": "k1"})),
         flow.upload(env, b, o["entity"], "customers", "c.csv", b"a,b\n1,2\n"),
+        # B2 endpoints
+        c.post(f"/api/v1/entities/{o['entity']}/findings/exports", headers=b.h()),
+        c.get(f"/api/v1/files/{o['file']}", headers=b.h()),
+        c.patch(f"/api/v1/users/{a.users['reviewer']}", headers=b.h(), json={"disabled": True}),
     ]
     assert [r.status_code for r in calls] == [404] * len(calls), [r.text for r in calls]
     assert all(r.json() == {"reason": "not_found"} for r in calls)
@@ -193,6 +199,21 @@ def test_it02_preparer_cannot_decide(env: Env) -> None:
             f"/api/v1/entities/{o['entity']}/asp-status",
             headers=a.h("preparer"),
             json={"status": "appointed"},
+        ),
+        # B2: users and invitations are the Owner's (schema.md permission matrix)
+        c.post(
+            "/api/v1/invites",
+            headers=a.h("preparer"),
+            json={"email": "x@firm.test", "role": "owner"},
+        ),
+        c.post(
+            "/api/v1/invites",
+            headers=a.h("reviewer"),
+            json={"email": "y@firm.test", "role": "preparer"},
+        ),
+        c.get("/api/v1/users", headers=a.h("preparer")),
+        c.patch(
+            f"/api/v1/users/{a.users['owner']}", headers=a.h("reviewer"), json={"disabled": True}
         ),
     ]
     assert [r.status_code for r in calls] == [403] * len(calls)

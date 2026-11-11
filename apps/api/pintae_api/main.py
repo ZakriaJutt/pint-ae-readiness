@@ -12,6 +12,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import HTTPException, RequestValidationError
@@ -19,12 +20,13 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import IntegrityError
 
-from pintae_api import routes
+from pintae_api import auth_routes, routes
 from pintae_core import audit, readiness, tenancy
 from pintae_core.config import get_settings
 from pintae_core.db import app_engine
 from pintae_core.idempotency import IdempotencyConflict
 from pintae_core.logging import configure_logging, correlation_id_var, log_event, new_correlation_id
+from pintae_core.mail import Mailer, default_mailer
 from pintae_core.models import SCHEMA_REVISION
 from pintae_core.readiness import DomainError
 from pintae_core.storage import ObjectStore, default_store
@@ -34,14 +36,32 @@ log = logging.getLogger("pintae.api")
 
 
 def create_app(
-    engine: Engine | None = None, store: ObjectStore | None = None, clock: Clock | None = None
+    engine: Engine | None = None,
+    store: ObjectStore | None = None,
+    clock: Clock | None = None,
+    mailer: Mailer | None = None,
 ) -> FastAPI:
     configure_logging()
-    app = FastAPI(title="PINT AE Readiness Desk API", version="0.1.0-b1")
+    app = FastAPI(title="PINT AE Readiness Desk API", version="0.2.0-b2")
     app.state.engine = engine or app_engine()
     app.state.store = store or default_store()
     app.state.clock = clock or utc_now
+    app.state.mailer = mailer or default_mailer()
     app.include_router(routes.router, prefix="/api/v1")
+    app.include_router(auth_routes.router, prefix="/api/v1")
+    allowed_origin = _origin(get_settings().public_base_url)
+
+    @app.middleware("http")
+    async def same_origin(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        """A state-changing request that names another origin is refused (defence in depth
+        next to SameSite=Lax and the anti-forgery token, ASVS 3.5.1)."""
+        origin = request.headers.get("origin")
+        unsafe = request.method not in ("GET", "HEAD", "OPTIONS")
+        if unsafe and origin is not None and origin != allowed_origin:
+            return JSONResponse(status_code=403, content={"reason": "cross_origin_refused"})
+        return await call_next(request)
 
     @app.middleware("http")
     async def correlation(
@@ -64,6 +84,8 @@ def create_app(
             "default-src 'none'; object-src 'none'; base-uri 'none'"
         )
         response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers.setdefault("Cache-Control", "no-store")
+        response.headers["Referrer-Policy"] = "no-referrer"
         token = correlation_id_var.set(cid)
         log_event(
             log,
@@ -123,6 +145,11 @@ def create_app(
         return JSONResponse(status_code=200 if ok else 503, content={"ready": ok, "checks": checks})
 
     return app
+
+
+def _origin(url: str) -> str:
+    p = urlparse(url)
+    return f"{p.scheme}://{p.netloc}"
 
 
 def readiness_checks(engine: Engine, store: ObjectStore) -> dict[str, str]:

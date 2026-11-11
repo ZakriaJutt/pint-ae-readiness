@@ -75,10 +75,10 @@ Rules: apps import only the public interface of packages; `api` and `worker` nev
 
 | Area | Endpoints | Screen |
 |---|---|---|
-| Auth | `POST /auth/login`, `POST /auth/totp`, `POST /auth/logout`, `POST /invites`, `POST /invites/{token}/accept` | S-01, S-02, S-15, S-17 |
+| Auth | `POST /auth/login`, `POST /auth/totp`, `POST /auth/logout`, `GET /auth/session` (current user and anti-forgery token), `POST /invites`, `GET /invites/{token}` (firm, role, address), `POST /invites/{token}/accept` | S-01, S-02, S-15, S-17 |
 | Recovery | `POST /auth/password-reset` (request), `POST /auth/password-reset/{token}` (complete; TOTP or recovery code still required), `POST /auth/recovery-code`, `POST /auth/recovery-codes/regenerate`, `POST /users/{id}/reset` (Owner), `POST /vendor/owner-resets` and `POST /vendor/owner-resets/{id}/complete` | S-18, S-15 |
 | Firm | `GET, PUT /firm`; `PUT /firm/logo` | S-03 |
-| Users | `GET, POST /users`; `PATCH /users/{id}` (role, disable) | S-15 |
+| Users | `GET /users`; `PATCH /users/{id}` (role, disable); a user is added only by `POST /invites` | S-15 |
 | Entities | `GET, POST /entities`; `GET, PATCH, DELETE /entities/{id}`; `GET /dashboard`; `POST /dashboard/exports` | S-04, S-05 |
 | Segment | `POST /entities/{id}/segment-assessments`; `POST /segment-assessments/{id}/decision` | S-06 |
 | Reference | `GET /calendar-versions`; `GET /provisions`; `GET /rule-packs`; `GET /asp-directory` | S-14, S-11 |
@@ -92,6 +92,8 @@ Rules: apps import only the public interface of packages; `api` and `worker` nev
 | Governance | `GET /audit-events`; `GET, POST /exports`; `GET, POST /support-grants`; `DELETE /support-grants/{id}`; `GET, POST /deletion-requests`; `DELETE /deletion-requests/{id}` | S-16 |
 | Vendor (separate sign-in, section 8.1) | `POST /vendor/auth/login`, `POST /vendor/auth/totp`; `POST /vendor/rule-packs/{code}/publish`; `POST /vendor/calendar-versions/{code}/publish`; `POST /vendor/flags/approvals-frozen`; `GET /vendor/support/{grant_id}/...` (read-only mirror of the firm GET routes) | None in the firm application |
 | Health | `GET /healthz`, `GET /readyz` | — |
+
+Built in B2 (2026-11-11): every Auth row; from Recovery `POST /auth/password-reset`, `POST /auth/password-reset/{token}`, `POST /auth/recovery-code`, `POST /auth/recovery-codes/regenerate`; the Users rows; `POST /entities/{id}/findings/exports` and `GET /files/{id}`. Not built yet: `POST /users/{id}/reset`, the vendor routes (vendor sign-in, Owner resets, support sessions); until then the firm's first Owner is invited by the vendor script `scripts/create_firm.py` and publication runs through `scripts/load_rulepack.py`.
 
 Every action on every screen in App-flow.md maps to a row above; the tenant and permission suite (T-5.1.1) is generated from this table, so a route missing here fails the suite's inventory check.
 
@@ -193,7 +195,7 @@ Operating cost **[A]**, not priced at source: VM, database, storage, backups and
 
 ## 8. Crosscutting concepts
 
-**8.1 Identity.** Firm users: password of at least 12 characters checked against a breached-password set, plus TOTP for every user. Invitation links are single-use activation codes valid 24 hours; email is never an authentication factor. Sessions are opaque server-side tokens with at least 128 bits of entropy, held in a cookie with `Secure`, `HttpOnly`, `SameSite=Lax` and the `__Host-` prefix; 30-minute inactivity limit, 12-hour absolute limit, ended on sign-out and when a user is disabled; state-changing requests carry an anti-forgery token. This replaces the brief's "email magic link" (AD-05).
+**8.1 Identity.** Firm users: password of at least 12 characters checked against a breached-password set, plus TOTP for every user. Invitation links are single-use activation codes valid 24 hours; email is never an authentication factor. Sessions are opaque server-side tokens with at least 128 bits of entropy, held in a cookie with `Secure`, `HttpOnly`, `SameSite=Lax` and the `__Host-` prefix; 30-minute inactivity limit, 12-hour absolute limit, ended on sign-out and when a user is disabled; state-changing requests carry an anti-forgery token. This replaces the brief's "email magic link" (AD-05). Built in B2 (`pintae_core.auth`, `pintae_core.identity`): the session token is a 256-bit opaque value whose SHA-256 is stored; the cookie is `__Host-pintae_session`; a session has a stage (`password`, `enrol`, `full`), only `full` reaches application routes, a pending stage lasts at most 10 minutes and five wrong codes end it, and the token is replaced when the session becomes `full`; the anti-forgery token is an HMAC of the session token sent in `X-CSRF-Token`, and a state-changing request that carries another `Origin` is refused; the sign-in throttle refuses (429) after five failed steps for one account, or 30 sign-in requests from one client address, in 15 minutes; TOTP is RFC 6238 (SHA-1, 6 digits, 30 s, one step of drift), each code accepted once, the secret sealed with AES-256-GCM under `PINTAE_TOTP_KEY`; passwords and recovery codes are hashed with scrypt (N=2^15, r=8, p=1); recovery codes are reissued at every enrolment, and a recovery-code sign-in forces TOTP re-enrolment; e-mail goes through SMTP (Mailpit locally); files are stored through the S3 API (MinIO locally) and served only through `GET /files/{id}`.
 
 Recovery (S-18): (a) forgotten password: a single-use reset link valid 20 minutes, after which TOTP or a recovery code is still required; (b) lost TOTP device: one of ten single-use recovery codes issued to every user at enrolment, stored hashed, then forced re-enrolment; (c) both lost, user is not an Owner: the Owner resets the user, which issues a new invitation, the same proofing as enrolment; (d) both lost, sole Owner: the vendor calls back the telephone number in the signed pilot agreement, waits 24 hours, then sends a new invitation to the email address in that agreement; both steps are audited and every other user of the firm is notified. Enrolment proofing is itself only an invitation to the agreed address, so (c) and (d) are at the same level as enrolment and no higher.
 
@@ -215,19 +217,19 @@ Vendor staff are not firm users. They live in `vendor_users` (roles: publisher, 
 
 | Requirement (level) | Planned control | Status |
 |---|---|---|
-| 6.2.1 (L1), 6.2.12 (L2) | Password length and breached-password check | Planned |
-| 6.3.1 (L1), 6.3.3 (L2) | Rate limits on sign-in; TOTP for all users | Planned |
-| 6.3.6 (L3) | Email not used as a factor | Planned; this is why the magic link is dropped |
-| 6.4.3 (L2), 6.4.4 (L2) | Password reset never bypasses TOTP; lost-factor recovery at the same proofing level as enrolment (8.1 a–d) | Planned; 6.4.4 is met only at the low level of enrolment itself |
-| 6.5.1, 6.5.2, 6.5.3 (L2) | Recovery codes single-use, stored with a salted password hash, generated by a secure random generator | Planned |
-| 7.2.1, 7.2.3, 7.2.4 (L1); 7.3.1, 7.3.2 (L2); 7.4.1, 7.4.2 (L1) | Section 8.1 | Planned |
-| 3.3.1 (L1), 3.3.2, 3.3.4 (L2) | Session cookie attributes in 8.1 | Planned |
-| 3.4.1 (L1), 3.4.3 (L2) | Strict-Transport-Security on all responses; Content-Security-Policy with `object-src` and `base-uri` set to none | Planned |
-| 3.5.1 (L1) | Anti-forgery token on state-changing requests | Planned |
-| 4.1.1 (L1) | Content-Type on every response body; file downloads typed by generated content, not by upload | Planned |
+| 6.2.1 (L1), 6.2.12 (L2) | Password length and breached-password check | 6.2.1 built (B2, 12 to 128 characters); 6.2.12 **partial**: an offline set of common passwords and patterns only, no full breach corpus |
+| 6.3.1 (L1), 6.3.3 (L2) | Rate limits on sign-in; TOTP for all users | Built (B2) |
+| 6.3.6 (L3) | Email not used as a factor | Built (B2): e-mail carries invitations and reset links only; this is why the magic link is dropped |
+| 6.4.3 (L2), 6.4.4 (L2) | Password reset never bypasses TOTP; lost-factor recovery at the same proofing level as enrolment (8.1 a–d) | 6.4.3 built (B2); 6.4.4 **partial**: (a) and (b) built, (c) Owner reset and (d) vendor Owner reset not built; met only at the low level of enrolment itself |
+| 6.5.1, 6.5.2, 6.5.3 (L2) | Recovery codes single-use, stored with a salted password hash, generated by a secure random generator | Built (B2); TOTP codes are also accepted once |
+| 7.2.1, 7.2.3, 7.2.4 (L1); 7.3.1, 7.3.2 (L2); 7.4.1, 7.4.2 (L1) | Section 8.1 | Built (B2) |
+| 3.3.1 (L1), 3.3.2, 3.3.4 (L2) | Session cookie attributes in 8.1 | Built (B2) |
+| 3.4.1 (L1), 3.4.3 (L2) | Strict-Transport-Security on all responses; Content-Security-Policy with `object-src` and `base-uri` set to none | Built (API responses, B1) |
+| 3.5.1 (L1) | Anti-forgery token on state-changing requests | Built (B2) |
+| 4.1.1 (L1) | Content-Type on every response body; file downloads typed by generated content, not by upload | Built (B2, `GET /files/{id}`) |
 | 4.1.3 (L2), 4.2.1 (L2) | Proxy strips client-supplied forwarding headers; one HTTP parser at the proxy | Planned; not designed in detail |
-| 13.3.1, 13.3.2 (L2) | Secrets, including the key that encrypts `totp_secret_enc`, in the cloud secret store with access limited to the API role | Planned |
-| 8.2.1, 8.2.2, 8.3.1 (L1); 8.4.1 (L2) | Role checks and tenant controls at the service layer and in the database | Planned |
+| 13.3.1, 13.3.2 (L2) | Secrets, including the key that encrypts `totp_secret_enc`, in the cloud secret store with access limited to the API role | **Not met** in B2: keys come from settings (gitignored `backend/.env` locally); no secret store yet |
+| 8.2.1, 8.2.2, 8.3.1 (L1); 8.4.1 (L2) | Role checks and tenant controls at the service layer and in the database | Built (B1, B2 for users and invitations) |
 | 5.1.1 (L2), 5.2.1, 5.2.2 (L1), 5.2.3 (L2), 5.3.2 (L1) | Section 8.5 | Planned |
 | 5.4.3 (L2) antivirus scanning | None | **Not met** in the MVP; uploaded originals are never served back |
 | 14.1.1, 14.2.4 (L2) | Data classes and retention in schema.md section 6 | Planned |

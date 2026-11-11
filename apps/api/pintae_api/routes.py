@@ -10,19 +10,20 @@ from datetime import UTC, date, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, Header, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 from pintae_api.deps import DECIDERS, Actor, actor, engine, store, today
-from pintae_core import audit, idempotency, jobs, readiness, tenancy
+from pintae_core import audit, exports, idempotency, jobs, readiness, tenancy
 from pintae_core.config import get_settings
 from pintae_core.models import (
     AspStatus,
     CheckRun,
     ClientEntity,
     ColumnMapping,
+    FileRow,
     FindingException,
     FindingRow,
     Job,
@@ -900,6 +901,82 @@ def list_findings(entity_id: uuid.UUID, a: ActorDep, eng: EngineDep) -> dict[str
                 for f, r in rows
             ],
         }
+
+
+@router.post("/entities/{entity_id}/findings/exports", status_code=201)
+def export_findings(
+    entity_id: uuid.UUID, a: ActorDep, eng: EngineDep, st_: StoreDep
+) -> dict[str, Any]:
+    """The fix list of the current run as CSV, stored as a generated file (B2)."""
+    with tenancy.session(a.firm_id, eng) as s:
+        ent = entity_or_404(s, entity_id)
+        snap = readiness.current_snapshot(s, ent.id)
+        if snap is None:
+            raise DomainError(409, "no_run_yet")
+        rows = s.execute(
+            select(FindingRow, RuleRow)
+            .join(RuleRow, RuleRow.id == FindingRow.rule_id)
+            .where(FindingRow.run_id == snap.run_id)
+            .order_by(FindingRow.dataset, RuleRow.code, FindingRow.row_number)
+        ).all()
+        data = exports.csv_bytes(
+            ["rule", "severity", "dataset", "record", "sheet", "row", "column", "outcome",
+             "message", "value_found"],
+            [
+                [r.code, r.severity, f.dataset, f.record_key, f.sheet, f.row_number,
+                 f.column_name, f.outcome, f.message, f.value_found]
+                for f, r in rows
+            ],
+        )  # fmt: skip
+        row = exports.store_file(
+            s,
+            st_,
+            firm_id=a.firm_id,
+            created_by=a.user_id,
+            purpose="fix_list",
+            entity_id=ent.id,
+            data=data,
+            content_type="text/csv; charset=utf-8",
+            download_name=f"fix-list-{str(ent.id)[:8]}.csv",
+        )
+        audit.record(
+            s,
+            firm_id=a.firm_id,
+            action="export.fix_list",
+            object_type="file",
+            object_id=row.id,
+            actor_id=a.user_id,
+            detail={"rows": len(rows)},
+        )
+        return {"file_id": str(row.id), "bytes": row.byte_size, "rows": len(rows)}
+
+
+@router.get("/files/{file_id}")
+def download_file(file_id: uuid.UUID, a: ActorDep, eng: EngineDep, st_: StoreDep) -> Response:
+    """The only way a stored object leaves the system (no public or presigned URLs). The
+    type is the one the generator recorded, never the uploader's (TRD 8.8, 4.1.1)."""
+    with tenancy.session(a.firm_id, eng) as s:
+        row: FileRow = get_or_404(s, FileRow, file_id, "file")
+        if row.expires_at is not None and row.expires_at <= datetime.now(tz=UTC):
+            raise not_found("file", file_id)
+        audit.record(
+            s,
+            firm_id=a.firm_id,
+            action="file.downloaded",
+            object_type="file",
+            object_id=row.id,
+            actor_id=a.user_id,
+        )
+        key, ctype, name = row.storage_key, row.content_type, row.download_name
+    data = st_.get(key)
+    return Response(
+        content=data,
+        media_type=ctype,
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 class ExceptionIn(BaseModel):

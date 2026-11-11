@@ -73,12 +73,12 @@ def test_it11_parity_equal_and_drift_detected(admin_engine: Engine) -> None:
 
 def test_it11_single_head_and_two_heads_fail(tmp_path: Path) -> None:
     src = ROOT / "backend/migrations"
-    assert check_schema_parity.heads(src) == ["0004"]
+    assert check_schema_parity.heads(src) == ["0005"]
     dst = tmp_path / "migrations"
     shutil.copytree(src, dst)
     for rev in ("0002a", "0002b"):
         (dst / "versions" / f"{rev}.py").write_text(
-            f'revision = "{rev}"\ndown_revision = "0004"\nbranch_labels = None\ndepends_on = None\n'
+            f'revision = "{rev}"\ndown_revision = "0005"\nbranch_labels = None\ndepends_on = None\n'
             "def upgrade():\n    pass\ndef downgrade():\n    pass\n"
         )
     assert sorted(check_schema_parity.heads(dst)) == ["0002a", "0002b"]
