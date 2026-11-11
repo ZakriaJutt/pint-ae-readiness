@@ -91,7 +91,7 @@ def test_ut15_csv_cells_that_start_a_formula_are_escaped() -> None:
     assert [safe_cell(v) for v in ("=1+1", "+9", "-2", "@x", "ok", None, 5)] == [
         "'=1+1", "'+9", "'-2", "'@x", "ok", "", "5",
     ]  # fmt: skip
-    assert csv_bytes(["a"], [["=cmd"]]).decode("utf-8-sig") == "a\r\n'=cmd\r\n"
+    assert csv_bytes(["a"], [["=cmd"]]).decode("utf-8-sig") == '"a"\r\n"\'=cmd"\r\n'
 
 
 def test_storage_keys_isolate_firm_source_and_purpose() -> None:

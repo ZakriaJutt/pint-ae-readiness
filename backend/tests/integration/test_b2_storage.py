@@ -89,7 +89,7 @@ def test_upload_and_generated_file_round_trip_per_firm(s3_env: Env) -> None:
     assert r.headers["content-type"] == "text/csv; charset=utf-8"
     assert r.headers["content-disposition"].startswith("attachment;")
     assert r.headers["cache-control"] == "no-store"
-    assert r.content.decode("utf-8-sig").startswith("rule,severity,dataset")
+    assert r.content.decode("utf-8-sig").startswith('"rule","severity","dataset"')
     assert env.client.get(f"/api/v1/files/{fid}", headers=b.h()).status_code == 404
     assert env.client.get(f"/api/v1/files/{fid}").status_code == 401
     assert env.client.get(f"/api/v1/files/{uuid.uuid4()}", headers=a.h()).status_code == 404

@@ -14,23 +14,50 @@ from sqlalchemy.orm import Session
 from pintae_core.models import FileRow
 from pintae_core.storage import ObjectStore, generated_key
 
-_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+_FORMULA_START = ("=", "+", "-", "@", "\uff1d", "\uff0b", "\uff0d", "\uff20")
+_SEPARATORS = (",", ";", "\t", "|")
+_LEADING_JUNK = " \t\r\n\x0b\x0c\x00"
+
+
+def _starts_formula(text: str) -> bool:
+    return text.lstrip(_LEADING_JUNK).startswith(_FORMULA_START)
 
 
 def safe_cell(value: object) -> str:
-    """A cell a spreadsheet will not execute: text starting with = + - @ (or a tab or a
-    carriage return) is prefixed with an apostrophe (TRD 8.5)."""
+    """A cell no spreadsheet will execute (TRD 8.5, UT-15, B2-S06):
+    - text whose first character after leading whitespace or control characters is a
+      formula start (``= + - @`` and their full-width forms) gets an apostrophe in front;
+    - so does every such start that follows a separator (``,`` ``;`` tab ``|``), so a
+      reader that splits on another list separator never sees a formula either.
+    Every cell is also quoted by ``csv_bytes``."""
     text = "" if value is None else str(value)
-    return "'" + text if text.startswith(_FORMULA_START) else text
+    if text.startswith(("\t", "\r")) or _starts_formula(text):
+        text = "'" + text
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        out.append(ch)
+        if ch in _SEPARATORS and _starts_formula(text[i + 1 :]):
+            j = i + 1
+            while j < len(text) and text[j] in _LEADING_JUNK:
+                out.append(text[j])
+                j += 1
+            out.append("'")
+            i = j
+            continue
+        i += 1
+    return "".join(out)
 
 
 def csv_bytes(header: Sequence[str], rows: Iterable[Sequence[object]]) -> bytes:
+    """Every field quoted (``QUOTE_ALL``), so ``,`` and ``;`` locales read the same cells."""
     buf = io.StringIO()
-    w = csv.writer(buf, lineterminator="\r\n")
+    w = csv.writer(buf, lineterminator="\r\n", quoting=csv.QUOTE_ALL)
     w.writerow([safe_cell(h) for h in header])
     for r in rows:
         w.writerow([safe_cell(c) for c in r])
-    return ("﻿" + buf.getvalue()).encode("utf-8")
+    return ("\ufeff" + buf.getvalue()).encode("utf-8")
 
 
 def store_file(

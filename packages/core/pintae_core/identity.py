@@ -20,7 +20,7 @@ from typing import Any
 from sqlalchemy import Engine, delete, func, select, text, update
 from sqlalchemy.orm import Session
 
-from pintae_core import audit, auth, tenancy
+from pintae_core import audit, auth, background, tenancy
 from pintae_core.config import get_settings
 from pintae_core.mail import Mailer, invite_message, reset_message
 from pintae_core.models import (
@@ -65,48 +65,29 @@ class ResolvedSession:
 # --------------------------------------------------------------------------- throttle
 
 
-def _throttle_check(s: Session, keys: list[tuple[bytes, str]]) -> None:
-    """ASVS 6.3.1: refuse with 429 once a client address has made too many sign-in requests,
-    or an account has too many failures since its last success, within the window."""
+def _reserve(eng: Engine, client: str, account: str | None) -> uuid.UUID | None:
+    """ASVS 6.3.1 (B2-S01, B2-S04): check and count in one statement, before any factor is
+    verified (``pintae_auth_reserve``, migration 0008). The attempt is stored as a failure and
+    becomes a success only through ``_succeeded``. Refusal is 429 with ``retry_after``."""
     cfg = get_settings()
-    since = text(f"now() - interval '{int(cfg.throttle_window_minutes)} minutes'")
-    for key, kind in keys:
-        q = (
-            select(func.count())
-            .select_from(AuthAttempt)
-            .where(AuthAttempt.key_hash == key, AuthAttempt.at > since)
-        )
-        if kind == "account":
-            last_ok = (
-                select(func.max(AuthAttempt.at))
-                .where(AuthAttempt.key_hash == key, AuthAttempt.succeeded.is_(True))
-                .scalar_subquery()
-            )
-            q = q.where(
-                AuthAttempt.succeeded.is_(False),
-                AuthAttempt.at > func.coalesce(last_ok, text("'-infinity'::timestamptz")),
-            )
-            limit = cfg.throttle_account_failures
-        else:
-            limit = cfg.throttle_client_attempts
-        if s.execute(q).scalar_one() >= limit:
-            raise DomainError(
-                429, "too_many_attempts", {"retry_after_minutes": cfg.throttle_window_minutes}
-            )
-
-
-def _record(eng: Engine, keys: list[tuple[bytes, str]], ok: bool) -> None:
     with tenancy.global_session(eng) as s:
-        for key, kind in keys:
-            s.add(AuthAttempt(key_hash=key, kind=kind, succeeded=ok))
-
-
-def _client_key(client: str) -> tuple[bytes, str]:
-    return auth.throttle_key("client", client or "unknown"), "client"
-
-
-def _account_key(value: str) -> tuple[bytes, str]:
-    return auth.throttle_key("account", value), "account"
+        row = s.execute(
+            text("SELECT * FROM pintae_auth_reserve(:c, :a, :w, :cm, :pm, :dm, :b, :cap)"),
+            {
+                "c": auth.throttle_key("client", client or "unknown"),
+                "a": auth.throttle_key("account", account) if account is not None else None,
+                "w": cfg.throttle_window_minutes,
+                "cm": cfg.throttle_client_attempts,
+                "pm": cfg.throttle_account_failures,
+                "dm": cfg.throttle_account_clients,
+                "b": cfg.throttle_delay_base_seconds,
+                "cap": cfg.throttle_delay_cap_seconds,
+            },
+        ).one()
+    if row.refused is not None:
+        raise DomainError(429, "too_many_attempts", {"retry_after_seconds": int(row.retry_after)})
+    aid: uuid.UUID | None = row.attempt_id
+    return aid
 
 
 # --------------------------------------------------------------------------- sessions
@@ -231,20 +212,23 @@ def create_invite(
     role: str,
 ) -> uuid.UUID:
     """Owner invites staff (S-15); also used by the vendor onboarding script for a firm's
-    first Owner. An open invitation for the same address is revoked."""
+    first Owner. An open invitation of this firm to the same address is revoked."""
     cfg = get_settings()
     if role not in ROLES:
         raise DomainError(422, "unknown_role")
     email = email.strip()
     if "@" not in email or len(email) > 254:
         raise DomainError(422, "invalid_email")
-    if _user_exists(eng, email):
-        raise DomainError(409, "email_in_use")
     token = auth.new_token()
     with tenancy.session(firm_id, eng) as s:
         firm = s.get(Firm, firm_id)
         if firm is None:
             raise DomainError(404, "not_found", {"object_type": "firm", "object_id": str(firm_id)})
+        # B2-S05: only this firm's users are visible here (row-level security). An address
+        # with an account at another firm gets the invitation, and the clash is answered to
+        # the invitee at acceptance, never to the inviting firm.
+        if s.execute(select(User.id).where(User.email == email)).first() is not None:
+            raise DomainError(409, "email_in_use")
         s.execute(
             update(Invite)
             .where(Invite.email == email, Invite.used_at.is_(None), Invite.revoked_at.is_(None))
@@ -314,10 +298,7 @@ def _open_invite(s: Session, token: str) -> Invite:
 def accept_invite(eng: Engine, *, token: str, password: str, client: str) -> Issued:
     """S-02 step 1: the invitee chooses a password; the invitation is used up and a TOTP
     secret is issued for enrolment. Step 2 is ``complete_totp`` on the ``enrol`` session."""
-    keys = [_client_key(client)]
-    with tenancy.global_session(eng) as s:
-        _throttle_check(s, keys)
-    _record(eng, keys, True)
+    _reserve(eng, client, None)
     fid = _token_firm(eng, "invite", token)
     if fid is None:
         raise DomainError(410, "invite_invalid_or_expired")
@@ -336,7 +317,8 @@ def accept_invite(eng: Engine, *, token: str, password: str, client: str) -> Iss
             extra = _enrolment(s, user)
         else:
             if _user_exists(eng, inv.email):
-                raise DomainError(409, "email_in_use")
+                # Said only to the holder of the invitation, who owns the address (B2-S05).
+                raise DomainError(409, "address_has_an_account")
             uid = uuid.uuid4()
             user = User(
                 id=uid,
@@ -367,30 +349,34 @@ def accept_invite(eng: Engine, *, token: str, password: str, client: str) -> Iss
 
 
 def password_step(eng: Engine, *, email: str, password: str, client: str) -> Issued:
-    """S-01 step 1. The same generic refusal whether the address, the password or the
-    account state was wrong."""
+    """S-01 step 1. One answer, 401 ``sign_in_failed``, for an unknown address, a wrong
+    password, a disabled account and an account whose TOTP enrolment was never finished
+    (B2-S05); the Owner sees "enrolment incomplete" in S-15 and re-invites."""
     email = email.strip()
-    keys = [_client_key(client), _account_key(email)]
+    aid = _reserve(eng, client, email)
     with tenancy.global_session(eng) as s:
-        _throttle_check(s, keys)
         row = s.execute(text("SELECT * FROM pintae_login_lookup(:e)"), {"e": email}).first()
     if row is None:
         auth.burn_password_check(password)
-        _record(eng, keys, False)
         raise DomainError(401, SIGN_IN_FAILED)
     ok = auth.verify_password(password, row.password_hash) and not row.disabled
-    _record(eng, [keys[0]], True)
-    _record(eng, [keys[1]], ok)
-    if not ok:
-        _audit_failure(eng, row.firm_id, row.user_id, "password")
-        raise DomainError(401, SIGN_IN_FAILED)
-    with tenancy.session(row.firm_id, eng) as s:
-        user = s.get(User, row.user_id)
-        assert user is not None
-        if user.totp_confirmed_at is None:
-            # B2-001: a password alone never starts an enrolment; the Owner re-invites.
-            raise DomainError(403, "totp_enrolment_required")
-        return Issued(_new_session(s, user, "password"), "password", user.firm_id, user.id)
+    if ok:
+        with tenancy.session(row.firm_id, eng) as s:
+            user = s.get(User, row.user_id)
+            assert user is not None
+            if user.totp_confirmed_at is not None:
+                issued = Issued(
+                    _new_session(s, user, "password"), "password", user.firm_id, user.id
+                )
+                _succeeded_in(s, aid)
+                return issued
+    _audit_failure(eng, row.firm_id, row.user_id, "password")
+    raise DomainError(401, SIGN_IN_FAILED)
+
+
+def _succeeded_in(s: Session, attempt_id: uuid.UUID | None) -> None:
+    if attempt_id is not None:
+        s.execute(update(AuthAttempt).where(AuthAttempt.id == attempt_id).values(succeeded=True))
 
 
 def _audit_failure(eng: Engine, firm_id: uuid.UUID, user_id: uuid.UUID, step: str) -> None:
@@ -406,15 +392,27 @@ def _audit_failure(eng: Engine, firm_id: uuid.UUID, user_id: uuid.UUID, step: st
         )
 
 
-def _code_failed(eng: Engine, rs: ResolvedSession) -> None:
+def _reserve_code(eng: Engine, rs: ResolvedSession) -> None:
+    """The per-session limit, reserved in one UPDATE under the row lock before the code is
+    checked (B2-S01): the sixth attempt on a session ends it."""
     cfg = get_settings()
     with tenancy.session(rs.firm_id, eng) as s:
-        sess = s.get(SessionRow, rs.session_id)
-        assert sess is not None
-        sess.failed_codes += 1
-        if sess.failed_codes >= cfg.totp_failures_per_session:
-            sess.ended_at = func.now()
-    _record(eng, [_account_key(str(rs.user_id))], False)
+        n = s.execute(
+            text(
+                "UPDATE sessions SET failed_codes = failed_codes + 1 WHERE id = :i"
+                " AND ended_at IS NULL AND failed_codes < :m RETURNING failed_codes"
+            ),
+            {"i": rs.session_id, "m": cfg.totp_failures_per_session},
+        ).scalar_one_or_none()
+        if n is None:
+            s.execute(
+                update(SessionRow).where(SessionRow.id == rs.session_id).values(ended_at=func.now())
+            )
+    if n is None:
+        raise DomainError(401, "sign_in_required")
+
+
+def _code_failed(eng: Engine, rs: ResolvedSession) -> None:
     _audit_failure(eng, rs.firm_id, rs.user_id, "code")
 
 
@@ -424,10 +422,8 @@ def complete_totp(
     """S-01 step 2 (``password`` session) or S-02 step 2 (``enrol`` session). Enrolment
     issues ten recovery codes, shown once."""
     rs = _pending(eng, token, ("password", "enrol"))
-    keys = [_client_key(client), _account_key(str(rs.user_id))]
-    with tenancy.global_session(eng) as s:
-        _throttle_check(s, keys)
-    _record(eng, [keys[0]], True)
+    aid = _reserve(eng, client, f"user:{rs.user_id}")
+    _reserve_code(eng, rs)
     with tenancy.session(rs.firm_id, eng) as s:
         user = s.get(User, rs.user_id, with_for_update=True)
         assert user is not None
@@ -459,6 +455,7 @@ def complete_totp(
                     .values(ended_at=func.now())
                 )
             new = _promote(s, rs.session_id, "full")
+            _succeeded_in(s, aid)
             audit.record(
                 s,
                 firm_id=rs.firm_id,
@@ -470,7 +467,6 @@ def complete_totp(
     if not ok:
         _code_failed(eng, rs)
         raise DomainError(401, SIGN_IN_FAILED)
-    _record(eng, [keys[1]], True)
     return Issued(new, "full", rs.firm_id, rs.user_id, extra)
 
 
@@ -480,10 +476,8 @@ def recovery_step(eng: Engine, *, token: str | None, code: str, client: str) -> 
     permitted action is confirming that secret. The old TOTP and the other recovery codes
     stay valid until then (B2-001)."""
     rs = _pending(eng, token, ("password",))
-    keys = [_client_key(client), _account_key(str(rs.user_id))]
-    with tenancy.global_session(eng) as s:
-        _throttle_check(s, keys)
-    _record(eng, [keys[0]], True)
+    aid = _reserve(eng, client, f"user:{rs.user_id}")
+    _reserve_code(eng, rs)
     with tenancy.session(rs.firm_id, eng) as s:
         codes = s.execute(
             select(RecoveryCode)
@@ -497,6 +491,7 @@ def recovery_step(eng: Engine, *, token: str | None, code: str, client: str) -> 
             assert user is not None
             extra = _enrolment(s, user)
             new = _promote(s, rs.session_id, "enrol")
+            _succeeded_in(s, aid)
             audit.record(
                 s,
                 firm_id=rs.firm_id,
@@ -508,7 +503,6 @@ def recovery_step(eng: Engine, *, token: str | None, code: str, client: str) -> 
     if hit is None:
         _code_failed(eng, rs)
         raise DomainError(401, SIGN_IN_FAILED)
-    _record(eng, [keys[1]], True)
     return Issued(new, "enrol", rs.firm_id, rs.user_id, extra)
 
 
@@ -544,19 +538,38 @@ def regenerate_recovery_codes(eng: Engine, *, firm_id: uuid.UUID, user_id: uuid.
 
 
 def request_reset(eng: Engine, mailer: Mailer, *, email: str, client: str) -> None:
-    """S-18 (a). The answer never says whether the address exists."""
-    cfg = get_settings()
+    """S-18 (a). The same status, body and timing whether or not the address has an
+    account (B2-S03): the request only reserves a throttle slot and queues the work; the
+    lookup, the reset row, the audit event and the mail happen after the response. The
+    per-(address, client) limit and the capped account delay (B2-S04) apply; at most
+    ``reset_mails_per_window`` mails go to one address per window, so others are dropped."""
     email = email.strip()
-    keys = [_client_key(client), _account_key("reset:" + email)]
+    _reserve(eng, client, "reset:" + email)
+    background.submit(lambda: _send_reset(eng, mailer, email))
+
+
+def _send_reset(eng: Engine, mailer: Mailer, email: str) -> None:
+    cfg = get_settings()
     with tenancy.global_session(eng) as s:
-        _throttle_check(s, keys)
         row = s.execute(text("SELECT * FROM pintae_login_lookup(:e)"), {"e": email}).first()
-    _record(eng, [keys[0]], True)
-    _record(eng, [keys[1]], False)  # every request counts towards the per-address limit
     if row is None or row.disabled:
         return
     token = auth.new_token()
     with tenancy.session(row.firm_id, eng) as s:
+        user = s.get(User, row.user_id)
+        if user is None or user.totp_confirmed_at is None:
+            return  # an unenrolled account is re-invited by its Owner (B2-001)
+        recent = s.execute(
+            select(func.count())
+            .select_from(PasswordReset)
+            .where(
+                PasswordReset.user_id == row.user_id,
+                PasswordReset.created_at
+                > func.now() - text(f"interval '{int(cfg.throttle_window_minutes)} minutes'"),
+            )
+        ).scalar_one()
+        if recent >= cfg.reset_mails_per_window:
+            return
         s.execute(
             update(PasswordReset)
             .where(PasswordReset.user_id == row.user_id, PasswordReset.used_at.is_(None))
@@ -586,10 +599,7 @@ def request_reset(eng: Engine, mailer: Mailer, *, email: str, client: str) -> No
 def complete_reset(eng: Engine, *, token: str, password: str, client: str) -> Issued:
     """S-18 (a) completion. Ends every session of the user and returns a ``password``
     session: the TOTP code or a recovery code is still required (ASVS 6.4.3)."""
-    keys = [_client_key(client)]
-    with tenancy.global_session(eng) as s:
-        _throttle_check(s, keys)
-    _record(eng, keys, True)
+    _reserve(eng, client, None)
     fid = _token_firm(eng, "password_reset", token)
     if fid is None:
         raise DomainError(410, "reset_invalid_or_expired")

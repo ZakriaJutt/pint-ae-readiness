@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import text
 
 from pintae_api.deps import SESSION_COOKIE
-from pintae_core import auth
+from pintae_core import auth, background
 from tests.integration import flow, mailpit
 from tests.integration.conftest import Env, Firm
 
@@ -522,14 +522,16 @@ def test_b2_001_unenrolled_account_needs_an_owner_reset(env: Env, addresses: lis
     tok = _invite(env, firm, email)
     r = c.post(f"/api/v1/invites/{tok}/accept", json={"password": PASSWORD})
     assert r.json()["stage"] == "enrol"  # ... and abandoned
+    # B2-S05: the right password gets the same 401 as a wrong one; no session, no hint.
     r = _login(env, email)
-    assert r.status_code == 403 and r.json()["reason"] == "totp_enrolment_required"
+    wrong = _login(env, email, "definitely-wrong-123")
+    assert (r.status_code, r.json()) == (wrong.status_code, wrong.json())
+    assert (r.status_code, r.json()) == (401, {"reason": "sign_in_failed"})
     assert "set-cookie" not in r.headers
-    c.post("/api/v1/auth/password-reset", json={"email": email})
-    rtok = mailpit.link_token(mailpit.latest_text(email, count=2), "recover")
-    r = c.post(f"/api/v1/auth/password-reset/{rtok}", json={"password": "mailbox-only-attacker-77"})
-    assert r.status_code == 403 and "set-cookie" not in r.headers
-    assert _login(env, email).status_code == 403  # the password did not change
+    # A reset request is answered as usual, but no link is sent for an unenrolled account.
+    assert c.post("/api/v1/auth/password-reset", json={"email": email}).status_code == 202
+    background.wait_idle()
+    assert len(mailpit.messages_to(email)) == 1  # the invitation only
     uid = next(
         u["id"]
         for u in c.get("/api/v1/users", headers=firm.h()).json()["items"]
@@ -542,7 +544,7 @@ def test_b2_001_unenrolled_account_needs_an_owner_reset(env: Env, addresses: lis
     assert c.post(f"/api/v1/users/{uid}/reset", headers=env.firm("Firm B").h()).status_code == 404
     r = c.post(f"/api/v1/users/{uid}/reset", headers=firm.h())
     assert r.status_code == 202
-    itok = mailpit.link_token(mailpit.latest_text(email, count=3), "invite")
+    itok = mailpit.link_token(mailpit.latest_text(email, count=2), "invite")
     assert _login(env, email).status_code == 401  # the old password is unusable now
     new_pw = "orchard-lattice-ember-5"
     r = c.post(f"/api/v1/invites/{itok}/accept", json={"password": new_pw})

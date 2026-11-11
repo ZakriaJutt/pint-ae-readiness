@@ -45,8 +45,13 @@ class Settings(BaseSettings):
     invite_valid_hours: int = 24
     password_reset_valid_minutes: int = 20
     throttle_window_minutes: int = 15
-    throttle_account_failures: int = 5  # failed sign-in steps per account per window
+    # B2-S01, B2-S04: reserved atomically before a factor is verified (migration 0008).
+    throttle_account_failures: int = 5  # failures per (account, client address) per window
     throttle_client_attempts: int = 30  # sign-in requests per client address per window
+    throttle_account_clients: int = 5  # distinct failing addresses before the account delay
+    throttle_delay_base_seconds: int = 30  # account delay, doubling per further address
+    throttle_delay_cap_seconds: int = 300  # the account delay never exceeds this
+    reset_mails_per_window: int = 3  # reset mails to one address per window; more are dropped
     totp_failures_per_session: int = 5
 
     # B2 e-mail: SMTP; locally the Mailpit inbox at 127.0.0.1:1025 without authentication.

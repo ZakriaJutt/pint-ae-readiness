@@ -40,7 +40,7 @@ NAMING = {
 
 
 # The migration head this code expects; /readyz compares it with alembic_version.
-SCHEMA_REVISION = "0007"
+SCHEMA_REVISION = "0008"
 
 
 class Base(DeclarativeBase):
@@ -277,6 +277,8 @@ class AuthAttempt(Base):
     kind: Mapped[str]
     succeeded: Mapped[bool]
     at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    # B2-S04: on account rows, the client address the attempt came from (hashed).
+    client_hash: Mapped[bytes | None]
     __table_args__ = (
         CheckConstraint(_in("kind", ("account", "client")), name="kind"),
         Index("ix_auth_attempts_key_at", "key_hash", "at"),

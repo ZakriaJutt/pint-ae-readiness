@@ -506,3 +506,41 @@ Reviewer's scripts at this branch's head:
 | `make dev-check` on `pintae_dev`, upgraded in place from 0005 (0006 repaired CAL-1 and CAL-2; 0007 added the B2-001 columns) | Ready in about 1 s |
 
 The `make dev-check` row in section 10 ("Not ready … reference_data") is superseded by this result. Documents changed: TRD.md (8.1 detail, 5.1 build note, 6.4.4 status), schema.md (`users.totp_pending_secret_enc`, `invites.user_id`), this section.
+
+### 10.2 Security fixes after the independent B2 review, round 1 (2026-11-11)
+
+Reviewer's verdicts, copied unchanged from `_coordination/review/pint-ae-readiness-b2-sec-verdicts.json`:
+
+| ID | Reviewer verdict (B2 security round 1) |
+|---|---|
+| B2-001 | Closed (reconfirmed: A03) |
+| B2-S01 | Open, major: sign-in throttle and per-session code limit are check-then-act; on a real server 37-39 of 40 concurrent wrong passwords and 6-16 of 40 concurrent wrong TOTP codes are evaluated against a limit of 5; failed_codes loses increments (A18) |
+| B2-S02 | Open, minor: claimed 3.4.1/3.4.3 (HSTS, CSP), 6.5.2 (recovery codes hashed) and the five-codes-per-session rule have no guarding test; mutations M1-M3 each leave 199 passing |
+| B2-S03 | Open, minor: password-reset request takes 2.7-3.7x longer for a known address (SMTP sent in the request), so accounts can be enumerated by timing (A15) |
+| B2-S04 | Open, minor: any third party locks a known user out of sign-in and reset with 5 requests per 15 minutes from any address (A06) |
+| B2-S05 | Open, minor: correct password on a half-enrolled account answers 403 totp_enrolment_required (oracle); any firm's Owner learns via 409 email_in_use whether an address has an account at another firm (A14) |
+| B2-S06 | Open, minor: CSV export leaves cells unquoted, so 'a;=cmd...' becomes a formula under a ';' list separator; leading space or newline before '=' not escaped (A17) |
+
+Every row below is **security fixes after B2 review, awaiting recheck**:
+
+| ID | Fix | Regression tests (`integration/test_b2_security.py` unless named) |
+|---|---|---|
+| B2-S01 | Migration 0008 adds `pintae_auth_reserve`. In one statement, under advisory locks on the account key and then the client key, it counts and either refuses or inserts the attempt as a failure, before the password, TOTP code or recovery code is verified; a verified step marks it succeeded. The per-session code limit is reserved in one `UPDATE sessions SET failed_codes = failed_codes + 1 … WHERE failed_codes < 5 RETURNING`, under the row lock; the sixth attempt ends the session | `test_b2_s01_forty_parallel_requests_on_a_real_server_stay_within_the_limits`: uvicorn on a free port; password burst, one-session TOTP burst and 8-session TOTP burst each ≤ 5 evaluated; `failed_codes` equals the failures. `test_b2_s01_code_reuse_still_refused_across_sessions` |
+| B2-S02 | Tests added; the claims stand | `test_b2_s02_security_headers_on_every_kind_of_response` (200, 401, 403, 404, 422); `test_b2_s02_recovery_codes_are_stored_as_salted_hashes`; `test_b2_s02_sixth_code_on_one_session_is_refused_by_the_session_rule` (account and client limits raised, so only the session rule acts) |
+| B2-S03 | `request_reset` only reserves a throttle slot and queues the work (`pintae_core.background`, one in-process worker thread). The lookup, the reset row, the audit event and the SMTP send happen after the response, so status, body and timing are the same for known and unknown addresses. No secret waits in the database; queued work is lost on a crash and the user asks again | `test_b2_s03_reset_request_answers_the_same_for_known_and_unknown`; attack script A15: reset known/absent 1.2× |
+| B2-S04 | No hard lock on an account. Within 15 minutes: per client address 30 requests; per (account, client address) five failures since the last success; for an account failing from five or more addresses, a delay after the latest failure of 30 s, doubling per further address, capped at 5 minutes, answered with `retry_after_seconds`. Sign-in and reset requests both work this way; at most three reset mails go to one address per window. TRD 8.1 updated | `test_b2_s04_third_party_cannot_lock_out_a_victim` (sign-in and reset, mailbox not flooded); `test_b2_s04_many_addresses_get_a_capped_delay_not_a_lock`; `test_b2_sign_in.py::test_account_throttle_after_five_failures` still holds per address |
+| B2-S05 | The same 401 `sign_in_failed`, with no session and no recorded success, for an unknown address, a wrong password, a disabled account and an account whose enrolment was never finished (S-15 already shows `totp_enrolled`). No reset link is sent for such an account. An invitation checks only the inviting firm's own users (row-level security); an address with an account at another firm gets the invitation, and the clash is told only to the invitee at acceptance (409 `address_has_an_account`) | `test_b2_s05_one_answer_for_every_wrong_credential`; `test_b2_s05_invitation_does_not_reveal_accounts_at_other_firms`; `test_b2_sign_in.py::test_b2_001_unenrolled_account_needs_an_owner_reset` (now asserts the 401) |
+| B2-S06 | `csv_bytes` quotes every field (`QUOTE_ALL`). `safe_cell` prefixes an apostrophe when the first character after leading whitespace or control characters is `=`, `+`, `-` or `@` (or a full-width form), and also after any `,`, `;`, tab or `|` inside a cell | `test_b2_s06_no_cell_reads_as_a_formula_in_comma_or_semicolon_locales[,]` and `[;]`; unit UT-15 updated to the quoted form |
+
+Reviewer's scripts after the fixes:
+- `pint-ae-readiness-b2-sec_attack.py`: 20 passed (A01–A19 and its clean-up); before the fixes, 5 failed (A06, A14, A15, A17, A18). A18 now evaluates 5 of 40 in all three bursts; concurrent replay still accepts 1 of 10; the server log holds no secret.
+- `pint-ae-readiness-b2-round5_security.py`: 9 passed.
+
+| Command (`feat/b2-local-auth`, rebuilt `pintae_test`) | Result |
+|---|---|
+| `make test` | 211 passed, 0 failed (92 unit, 119 integration) |
+| `make lint` / `make typecheck` | Pass, 73 files / 0 errors |
+| `make arch` / `make parity` | 0 violations / equal, head 0008 |
+| `make dev-check` (`pintae_dev` upgraded to 0008 in place) | Ready |
+
+Not changed, recorded: `auth_attempts` has no retention sweep yet; recovery codes can be regenerated with the session and its CSRF token alone; the shared local MinIO key reads every product's bucket (environment, TRD 13.3.x Not met); the Owner reset keeps the old TOTP until re-enrolment (round-5 note).

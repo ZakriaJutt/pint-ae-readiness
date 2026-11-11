@@ -24,6 +24,7 @@ from sqlalchemy import Engine, create_engine, text
 
 from pintae_api.deps import SESSION_COOKIE
 from pintae_api.main import create_app
+from pintae_core import background
 from pintae_core.auth import csrf_token
 from pintae_core.config import get_settings
 from pintae_core.models import TENANT_TABLES
@@ -85,6 +86,7 @@ def _clean_tenant_rows(request: pytest.FixtureRequest) -> None:
     if "admin_engine" not in request.fixturenames and "env" not in request.fixturenames:
         return
     eng: Engine = request.getfixturevalue("admin_engine")
+    background.wait_idle()  # queued reset work of the previous test (B2-S03)
     with eng.begin() as conn:
         conn.execute(text(f"TRUNCATE {', '.join(TENANT_TABLES)} CASCADE"))
         # Test-only cleanup of reference versions a test published: the immutability
