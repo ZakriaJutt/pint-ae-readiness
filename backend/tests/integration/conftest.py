@@ -95,6 +95,17 @@ def _clean_tenant_rows(request: pytest.FixtureRequest) -> None:
         conn.execute(text("DELETE FROM rule_packs WHERE code <> 'RP-1'"))
         conn.execute(text("ALTER TABLE rule_packs ENABLE TRIGGER rule_packs_immutable"))
         conn.execute(text("DELETE FROM system_flags"))
+        extra_cal = "SELECT id FROM calendar_versions WHERE code NOT IN ('CAL-1', 'CAL-2')"
+        conn.execute(text(f"DELETE FROM calendar_rules WHERE calendar_version_id IN ({extra_cal})"))
+        conn.execute(text(f"DELETE FROM provisions WHERE calendar_version_id IN ({extra_cal})"))
+        conn.execute(text(f"DELETE FROM publications WHERE object_id IN ({extra_cal})"))
+        conn.execute(
+            text("ALTER TABLE calendar_versions DISABLE TRIGGER calendar_versions_immutable")
+        )
+        conn.execute(text("DELETE FROM calendar_versions WHERE code NOT IN ('CAL-1', 'CAL-2')"))
+        conn.execute(
+            text("ALTER TABLE calendar_versions ENABLE TRIGGER calendar_versions_immutable")
+        )
 
 
 @dataclass

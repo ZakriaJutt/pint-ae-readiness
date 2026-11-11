@@ -74,12 +74,15 @@ class Counts:
     not_assessed_self_billed: int
     accepted_exceptions: int
     score_by_dataset: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    # Required datasets that were mapped but had no data rows (B1-002): never "no findings".
+    empty_datasets: tuple[str, ...] = ()
 
 
 def summarise(
     findings: Iterable[StoredFinding],
     accepted_exception_fingerprints: Iterable[str],
     in_scope_at_run: Mapping[str, int],
+    records_at_run: Mapping[str, int] | None = None,
 ) -> Counts:
     """Counts for the status table.
 
@@ -136,7 +139,10 @@ def summarise(
             "passed": passed,
             "score_percent": str(score) if score is not None else None,
         }
-    return Counts(failed, unchecked, manual, len(self_billed), excepted, scores)
+    empty: tuple[str, ...] = ()
+    if records_at_run is not None:
+        empty = tuple(ds for ds in REQUIRED_DATASETS if records_at_run.get(ds, 0) == 0)
+    return Counts(failed, unchecked, manual, len(self_billed), excepted, scores, empty)
 
 
 @dataclass(frozen=True)
@@ -169,7 +175,11 @@ def base_status(
         return Status.DATA_INCOMPLETE
     if counts.failed_blockers > 0:
         return Status.GAPS_OPEN
-    if counts.unchecked_blockers > 0 or counts.unresolved_manual_reviews > 0:
+    if (
+        counts.unchecked_blockers > 0
+        or counts.unresolved_manual_reviews > 0
+        or counts.empty_datasets
+    ):
         return Status.CHECKS_INCOMPLETE
     if counts.accepted_exceptions > 0:
         return Status.EXCEPTIONS_OPEN
@@ -186,6 +196,10 @@ class Versions:
     segment_version: int | None
     mapping_versions: Mapping[str, Any]  # dataset -> mapping version id; plus value-map digest
     profile_version: int | None
+    # B1-001: provisions (PRV-2) come from the calendar, so a result depends on it.
+    calendar_version: str | None = None
+    # B1-005: the newest live upload per dataset, whatever its parse state.
+    uploads: Mapping[str, str] = field(default_factory=dict)
 
 
 def stale_reasons(
@@ -200,6 +214,10 @@ def stale_reasons(
         reasons.append("mapping_changed")
     if pinned.profile_version != current.profile_version:
         reasons.append("profile_changed")
+    if pinned.calendar_version != current.calendar_version:
+        reasons.append("calendar_changed")
+    if dict(pinned.uploads) != dict(current.uploads):
+        reasons.append("upload_changed")
     if (today - newest_data_on).days > STALE_AFTER_DAYS:
         reasons.append("data_older_than_45_days")
     return reasons
@@ -222,5 +240,6 @@ def can_be_data_ready(counts: Counts, mappings_approved: bool) -> bool:
         and counts.unchecked_blockers == 0
         and counts.unresolved_manual_reviews == 0
         and counts.accepted_exceptions == 0
+        and not counts.empty_datasets
         and mappings_approved
     )

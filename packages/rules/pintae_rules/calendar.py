@@ -7,12 +7,12 @@ SEG-U shows both candidate outcomes and is governed by the earliest one.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any
 
 from pintae_rules.dates import days_between
-from pintae_rules.segment import Segment
+from pintae_rules.segment import BOUNDARY_FLAG, BOUNDARY_NOTE, Segment
 
 
 @dataclass(frozen=True)
@@ -124,6 +124,7 @@ class DeadlineView:
     display: str  # e.g. "31 days", "Due today", "Passed", "Before first invoice", "Not subject"
     segment_confirmed: bool
     notes: tuple[str, ...] = field(default_factory=tuple)
+    flags: tuple[str, ...] = field(default_factory=tuple)
 
 
 def _fmt_days(days: int) -> str:
@@ -141,6 +142,7 @@ def deadline_view(
     *,
     first_invoice_state: str | None = None,
     first_invoice_on: date | None = None,
+    revenue_band: str | None = None,
 ) -> DeadlineView:
     """Deadlines for a segment on ``today`` (a Dubai calendar date from ``dates.dubai_today``).
 
@@ -168,12 +170,24 @@ def deadline_view(
             outs.append(
                 Outcome(cand, c.appoint_by, c.implement_by, c.source_refs, c.discrepancy, label)
             )
-        return _fixed(calendar, seg, tuple(outs), today, confirmed)
+        view = _fixed(calendar, seg, tuple(outs), today, confirmed)
+        if revenue_band == "eq_50m":
+            view = replace(view, notes=(*view.notes, BOUNDARY_NOTE), flags=(BOUNDARY_FLAG,))
+        return view
 
     if rule.deadline_basis == "before_first_invoice":
-        passed = first_invoice_state == "issued" or (
-            first_invoice_on is not None and first_invoice_on <= today
+        # B1-010: an unknown first-invoice state shows its worst case: the date is needed
+        # and the row sorts as overdue until the Reviewer records it.
+        needs_date = first_invoice_on is None and first_invoice_state in (None, "unknown")
+        passed = (
+            first_invoice_state == "issued"
+            or (first_invoice_on is not None and first_invoice_on <= today)
+            or needs_date
         )
+        if needs_date:
+            display = "First invoice date needed"
+        else:
+            display = "Passed" if passed else "Before first invoice"
         return DeadlineView(
             segment=seg,
             calendar_code=calendar.code,
@@ -185,8 +199,9 @@ def deadline_view(
             if first_invoice_on is None
             else days_between(today, first_invoice_on),
             appoint_by_passed=passed,
-            display="Passed" if passed else "Before first invoice",
+            display=display,
             segment_confirmed=confirmed,
+            flags=("first_invoice_date_needed",) if needs_date else (),
         )
 
     if rule.deadline_basis == "not_subject":

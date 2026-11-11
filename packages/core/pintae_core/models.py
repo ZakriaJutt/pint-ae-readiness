@@ -40,7 +40,7 @@ NAMING = {
 
 
 # The migration head this code expects; /readyz compares it with alembic_version.
-SCHEMA_REVISION = "0001"
+SCHEMA_REVISION = "0002"
 
 
 class Base(DeclarativeBase):
@@ -365,7 +365,9 @@ class SegmentAssessment(TenantMixin, Base):
             + _in("first_invoice_state", ("issued", "not_yet", "unknown")),
             name="first_invoice_state",
         ),
-        CheckConstraint(_in("revenue_band", ("ge_50m", "lt_50m", "unknown")), name="revenue_band"),
+        CheckConstraint(
+            _in("revenue_band", ("ge_50m", "eq_50m", "lt_50m", "unknown")), name="revenue_band"
+        ),
         CheckConstraint(
             "evidence_type IS NULL OR "
             + _in(
@@ -459,7 +461,10 @@ class ValueMapping(TenantMixin, Base):
     __table_args__ = (
         UniqueConstraint("entity_id", "kind", "source_value"),
         CheckConstraint(
-            _in("kind", ("unit", "emirate", "tax_treatment", "document_type", "buyer_class")),
+            _in(
+                "kind",
+                ("unit", "emirate", "tax_treatment", "document_type", "buyer_class", "country"),
+            ),
             name="kind",
         ),
         CheckConstraint(_in("state", ("suggested", "confirmed", "approved")), name="state"),
@@ -578,12 +583,15 @@ class ReadinessSnapshot(TenantMixin, Base):
     unresolved_manual_reviews: Mapped[int] = mapped_column(Integer)
     not_assessed_self_billed: Mapped[int] = mapped_column(Integer)
     accepted_exceptions: Mapped[int] = mapped_column(Integer)
+    # Required datasets mapped with no data rows (B1-002); Data-ready requires 0.
+    empty_datasets: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     mappings_approved: Mapped[bool]
     is_current: Mapped[bool]
     __table_args__ = (
         CheckConstraint(
             "base_status <> 'data_ready' OR (failed_blockers = 0 AND unchecked_blockers = 0 "
-            "AND unresolved_manual_reviews = 0 AND accepted_exceptions = 0 AND mappings_approved)",
+            "AND unresolved_manual_reviews = 0 AND accepted_exceptions = 0 "
+            "AND empty_datasets = 0 AND mappings_approved)",
             name="data_ready_requires_clean",
         ),
         CheckConstraint(

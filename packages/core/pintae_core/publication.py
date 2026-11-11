@@ -15,7 +15,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
 from typing import Any
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
 from pintae_core.models import (
@@ -27,6 +27,7 @@ from pintae_core.models import (
     RuleRow,
     VendorUser,
 )
+from pintae_core.readiness import VERSIONS_LOCK_KEY
 from pintae_rules.calendar import calendar_from_data
 from pintae_rules.fixtures import run_suite, suite_hash
 from pintae_rules.packs import PackError, content_hash, pack_from_data
@@ -41,6 +42,11 @@ class PublicationRefused(Exception):
         super().__init__(reason)
         self.reason = reason
         self.detail = detail
+
+
+def _lock(s: Session) -> None:
+    """Exclusive versions lock: waits for in-flight approvals, blocks new ones (B1-009)."""
+    s.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": VERSIONS_LOCK_KEY})
 
 
 def _publisher(s: Session, vendor_user_id: uuid.UUID) -> VendorUser:
@@ -93,6 +99,7 @@ def publish_rule_pack(
         raise PublicationRefused("invalid_pack", str(exc)) from exc
     digest = content_hash(data)
     with Session(engine) as s, s.begin():
+        _lock(s)
         _publisher(s, vendor_user_id)
         existing = s.execute(
             select(RulePackRow).where(RulePackRow.code == pack.code)
@@ -158,6 +165,7 @@ def publish_calendar(
             raise PublicationRefused("calendar_rule_without_source", rule.segment)
     digest = content_hash(data)
     with Session(engine) as s, s.begin():
+        _lock(s)
         _publisher(s, vendor_user_id)
         existing = s.execute(
             select(CalendarVersion).where(CalendarVersion.code == cal.code)

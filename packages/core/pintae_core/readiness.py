@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
 from pintae_core.models import (
@@ -69,6 +69,29 @@ class DomainError(Exception):
         self.detail = detail or {}
 
 
+# One advisory-lock key for "published reference versions". Publication takes it
+# exclusively; approval takes it shared, so a pack or calendar cannot be published between
+# an approval's pin comparison and its commit (B1-009, TRD 6.2).
+VERSIONS_LOCK_KEY = 0x50494E5441450001  # "PINTAE" + 1
+
+
+def lock_versions_shared(s: Session) -> None:
+    s.execute(text("SELECT pg_advisory_xact_lock_shared(:k)"), {"k": VERSIONS_LOCK_KEY})
+
+
+def lock_entity(s: Session, entity_id: uuid.UUID) -> ClientEntity:
+    """Row lock on the entity. Every change to a version a result pins (segment, mapping,
+    value table, profile, upload, run) and every approval takes it, so they serialise."""
+    ent = s.execute(
+        select(ClientEntity).where(ClientEntity.id == entity_id).with_for_update()
+    ).scalar_one_or_none()
+    if ent is None or ent.deleted_at is not None:
+        raise DomainError(
+            404, "not_found", {"object_type": "client_entity", "object_id": str(entity_id)}
+        )
+    return ent
+
+
 def fingerprint_bytes(text_fp: str) -> bytes:
     return hashlib.sha256(text_fp.encode()).digest()
 
@@ -106,6 +129,20 @@ def current_calendar(s: Session) -> Calendar:
     ).scalar_one_or_none()
     if row is None:
         raise DomainError(503, "no_calendar_published")
+    return _calendar(s, row)
+
+
+def calendar_by_code(s: Session, code: str) -> Calendar:
+    """The calendar version a run pinned (B1-001), published or later withdrawn."""
+    row = s.execute(
+        select(CalendarVersion).where(CalendarVersion.code == code)
+    ).scalar_one_or_none()
+    if row is None:
+        raise DomainError(500, "pinned_calendar_missing")
+    return _calendar(s, row)
+
+
+def _calendar(s: Session, row: CalendarVersion) -> Calendar:
     rules = s.execute(
         select(CalendarRuleRow).where(CalendarRuleRow.calendar_version_id == row.id)
     ).scalars()
@@ -196,6 +233,22 @@ def latest_uploads(s: Session, entity_id: uuid.UUID) -> dict[str, Upload]:
     return out
 
 
+def latest_live_uploads(s: Session, entity_id: uuid.UUID) -> dict[str, Upload]:
+    """Newest upload per dataset that is not rejected or removed, whatever its parse state.
+
+    B1-005: staleness after a re-upload is derived from the upload row itself, so it does
+    not wait for the parse job."""
+    out: dict[str, Upload] = {}
+    rows = s.execute(
+        select(Upload)
+        .where(Upload.entity_id == entity_id, Upload.state.in_(("received", "parsed")))
+        .order_by(Upload.created_at.desc(), Upload.id)
+    ).scalars()
+    for u in rows:
+        out.setdefault(u.dataset, u)
+    return out
+
+
 def usable_mapping(s: Session, upload_id: uuid.UUID) -> ColumnMapping | None:
     """Latest confirmed or approved version: nothing is checked before confirmation."""
     return s.execute(
@@ -249,6 +302,8 @@ def plan_inputs(s: Session, ent: ClientEntity, today: date) -> RunPlan:
         segment_version=seg.version if seg else None,
         mapping_versions=mv,
         profile_version=ent.profile_version,
+        calendar_version=current_calendar(s).code,
+        uploads={ds: str(u.id) for ds, u in sorted(latest_live_uploads(s, ent.id).items())},
     )
     return RunPlan(used, mappings, vmaps, versions)
 
@@ -296,6 +351,8 @@ def create_run(
             for ds, u in sorted(plan.uploads.items())
         },
         "mapping_versions": dict(plan.versions.mapping_versions),
+        # B1-001: the calendar's provisions decide scope (PRV-2), so it is a run input.
+        "calendar_version": plan.versions.calendar_version,
     }
     input_hash = canonical_hash(inputs)
     existing = s.execute(
@@ -360,7 +417,10 @@ def execute_run(
         mapping = s.get(ColumnMapping, uuid.UUID(mid))
         assert upload is not None and mapping is not None and mapping.version == int(mver)
         datasets[ds] = _dataset_input(s, upload, mapping)
-    calendar = provisions_calendar or current_calendar(s)
+    pinned_cal = run.inputs.get("calendar_version")
+    calendar = provisions_calendar or (
+        calendar_by_code(s, pinned_cal) if pinned_cal else current_calendar(s)
+    )
     inp = rules_engine.EngineInput(
         seller=seller_profile(ent),
         datasets=datasets,
@@ -398,7 +458,11 @@ def execute_run(
     for rec in result.records:
         if rec.scope == "in_scope":
             in_scope[rec.dataset] = in_scope.get(rec.dataset, 0) + 1
-    run.inputs = {**run.inputs, "in_scope_at_run": in_scope}
+    records: dict[str, int] = dict.fromkeys(DATASETS, 0)
+    for rec in result.records:
+        if rec.dataset in records:
+            records[rec.dataset] += 1
+    run.inputs = {**run.inputs, "in_scope_at_run": in_scope, "records_at_run": records}
     run.result_hash = bytes.fromhex(result.result_hash)
     run.state = "succeeded"
     run.finished_at = func.now()
@@ -479,7 +543,12 @@ def refresh_snapshot(
         for f in rows
     ]
     accepted = {fp.hex() for fp in accepted_exceptions(s, run.entity_id, run.rule_pack_id)}
-    counts = st.summarise(stored, accepted, run.inputs.get("in_scope_at_run", {}))
+    counts = st.summarise(
+        stored,
+        accepted,
+        run.inputs.get("in_scope_at_run", {}),
+        run.inputs.get("records_at_run", {}),
+    )
     approved_maps = run_mappings_approved(s, run)
     was_approved = (
         snap.base_status == st.Status.DATA_READY.value
@@ -499,6 +568,7 @@ def refresh_snapshot(
     snap.unresolved_manual_reviews = counts.unresolved_manual_reviews
     snap.not_assessed_self_billed = counts.not_assessed_self_billed
     snap.accepted_exceptions = counts.accepted_exceptions
+    snap.empty_datasets = len(counts.empty_datasets)
     snap.mappings_approved = approved_maps
     s.flush()
     return counts
@@ -520,6 +590,8 @@ def run_versions(s: Session, run: CheckRun) -> st.Versions:
         segment_version=run.inputs.get("segment_version", seg.version if seg else None),
         mapping_versions=run.inputs["mapping_versions"],
         profile_version=run.profile_version,
+        calendar_version=run.inputs.get("calendar_version"),
+        uploads={ds: info["upload_id"] for ds, info in sorted(run.inputs["uploads"].items())},
     )
 
 
@@ -546,12 +618,14 @@ def read_status(s: Session, ent: ClientEntity, today: date, calendar: Calendar) 
     snap = current_snapshot(s, ent.id)
     seg = approved_segment(s, ent)
     latest = latest_assessment(s, ent.id)
+    band_source = seg or latest
     view = deadline_view(
         calendar,
         seg.segment if seg else None,
         today,
         first_invoice_state=(seg.first_invoice_state if seg else None),
         first_invoice_on=(seg.first_invoice_on if seg else None),
+        revenue_band=band_source.revenue_band if band_source else None,
     )
     asp = (
         s.execute(
@@ -575,6 +649,11 @@ def read_status(s: Session, ent: ClientEntity, today: date, calendar: Calendar) 
             snap.not_assessed_self_billed,
             snap.accepted_exceptions,
             snap.score_by_dataset,
+            tuple(
+                ds
+                for ds in st.REQUIRED_DATASETS
+                if run.inputs.get("records_at_run", {}).get(ds, 1) == 0
+            ),
         )
         base = st.base_status(
             state,
@@ -589,6 +668,8 @@ def read_status(s: Session, ent: ClientEntity, today: date, calendar: Calendar) 
             segment_version=(seg.version if seg else (latest.version if latest else None)),
             mapping_versions=plan.versions.mapping_versions,
             profile_version=ent.profile_version,
+            calendar_version=calendar.code,
+            uploads=plan.versions.uploads,
         )
         eff, reasons = st.effective_status(base, pinned, current, run.newest_data_on, today)
         pack_code = pinned.rule_pack
@@ -599,6 +680,7 @@ def read_status(s: Session, ent: ClientEntity, today: date, calendar: Calendar) 
             "not_assessed_self_billed": counts.not_assessed_self_billed,
             "accepted_exceptions": counts.accepted_exceptions,
             "score_by_dataset": counts.score_by_dataset,
+            "empty_datasets": list(counts.empty_datasets),
         }
     return EntityStatusView(
         entity_id=ent.id,
@@ -623,6 +705,7 @@ def report_pins(s: Session, run: CheckRun, calendar: Calendar) -> dict[str, Any]
         "mapping_versions": dict(v.mapping_versions),
         "profile_version": v.profile_version,
         "calendar_version": calendar.code,
+        "uploads": dict(v.uploads),
     }
 
 
@@ -637,6 +720,7 @@ def current_pins(s: Session, ent: ClientEntity, today: date, calendar: Calendar)
         "mapping_versions": dict(plan.versions.mapping_versions),
         "profile_version": ent.profile_version,
         "calendar_version": calendar.code,
+        "uploads": dict(plan.versions.uploads),
     }
 
 

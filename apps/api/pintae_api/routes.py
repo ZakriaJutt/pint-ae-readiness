@@ -166,6 +166,7 @@ def deadline_json(v: Any) -> dict[str, Any]:
             for o in v.outcomes
         ],
         "notes": list(v.notes),
+        "flags": list(v.flags),
     }
 
 
@@ -230,7 +231,7 @@ def patch_entity(
     entity_id: uuid.UUID, body: ProfileIn, a: ActorDep, eng: EngineDep
 ) -> dict[str, Any]:
     with tenancy.session(a.firm_id, eng) as s:
-        ent = entity_or_404(s, entity_id)
+        ent = readiness.lock_entity(s, entity_id)
         changes = body.model_dump(exclude_unset=True)
         for k, v in changes.items():
             setattr(ent, k, v)
@@ -294,7 +295,7 @@ def dashboard(a: ActorDep, eng: EngineDep, day: TodayDep) -> dict[str, Any]:
 
 class SegmentIn(BaseModel):
     entity_type: Literal["person", "government_entity"]
-    revenue_band: Literal["ge_50m", "lt_50m", "unknown"] = "unknown"
+    revenue_band: Literal["ge_50m", "eq_50m", "lt_50m", "unknown"] = "unknown"
     newly_established: bool = False
     first_invoice_state: Literal["issued", "not_yet", "unknown"] | None = None
     first_invoice_on: date | None = None
@@ -327,7 +328,7 @@ def propose_segment(
     entity_id: uuid.UUID, body: SegmentIn, a: ActorDep, eng: EngineDep
 ) -> dict[str, Any]:
     with tenancy.session(a.firm_id, eng) as s:
-        ent = entity_or_404(s, entity_id)
+        ent = readiness.lock_entity(s, entity_id)
         seg = classify(
             SegmentFacts(body.entity_type, body.revenue_band, body.newly_established, body.b2c_only)
         )
@@ -371,6 +372,7 @@ def decide_segment(
         row: SegmentAssessment = get_or_404(
             s, SegmentAssessment, assessment_id, "segment_assessment"
         )
+        readiness.lock_entity(s, row.entity_id)
         if row.state != "proposed":
             raise DomainError(409, "assessment_not_proposed")
         row.state = "approved" if body.decision == "approve" else "returned"
@@ -433,7 +435,7 @@ async def create_upload(
     route = "POST /entities/{id}/uploads"
     rhash = idempotency.request_hash(str(entity_id), dataset, digest)
     with tenancy.session(a.firm_id, eng) as s:
-        ent = entity_or_404(s, entity_id)
+        ent = readiness.lock_entity(s, entity_id)
         prior = idempotency.lookup(s, a.firm_id, route, key, rhash)
         if prior is not None:
             return JSONResponse(status_code=202, content=prior)
@@ -555,6 +557,15 @@ def samples(
     return out
 
 
+def data_rows(s: Session, upload_id: uuid.UUID, sheet: str | None, header_row: int) -> int:
+    rows = s.execute(
+        select(StagedRow.sheet).where(
+            StagedRow.upload_id == upload_id, StagedRow.row_number > header_row
+        )
+    ).scalars()
+    return sum(1 for sh in rows if (sh or None) == (sheet or None))
+
+
 def mapping_json(s: Session, m: ColumnMapping, with_samples: bool = True) -> dict[str, Any]:
     up = s.get(Upload, m.upload_id)
     headers = headers_for(s, m.upload_id, m.mapping.get("sheet"), int(m.mapping["header_row"]))
@@ -568,6 +579,10 @@ def mapping_json(s: Session, m: ColumnMapping, with_samples: bool = True) -> dic
         "headers": list(headers),
         "unmapped_fields": [f for f, v in m.mapping["fields"].items() if v is None],
         "absent_fields": [f for f, v in m.mapping["fields"].items() if v == ABSENT],
+        # B1-002: a file with no rows below the header row can never count as checked.
+        "data_rows": data_rows(
+            s, m.upload_id, m.mapping.get("sheet"), int(m.mapping["header_row"])
+        ),
     }
     if with_samples:
         body["samples"] = samples(s, m.upload_id, m.mapping, headers)
@@ -587,6 +602,7 @@ def put_mapping(
 ) -> dict[str, Any]:
     with tenancy.session(a.firm_id, eng) as s:
         up: Upload = get_or_404(s, Upload, upload_id, "upload")
+        readiness.lock_entity(s, up.entity_id)
         unknown = [f for f in body.fields if f not in TARGET_FIELDS[up.dataset]]
         if unknown:
             raise DomainError(422, "unknown_target_fields", {"fields": unknown})
@@ -619,6 +635,7 @@ def put_mapping(
 def confirm_mapping(upload_id: uuid.UUID, a: ActorDep, eng: EngineDep) -> dict[str, Any]:
     with tenancy.session(a.firm_id, eng) as s:
         up: Upload = get_or_404(s, Upload, upload_id, "upload")
+        readiness.lock_entity(s, up.entity_id)
         m = latest_mapping(s, upload_id)
         if m.state != "draft":
             raise DomainError(409, "mapping_not_draft")
@@ -656,6 +673,9 @@ def decide_mapping(
     a.require(DECIDERS)
     with tenancy.session(a.firm_id, eng) as s:
         m: ColumnMapping = get_or_404(s, ColumnMapping, mapping_id, "column_mapping")
+        locked_up = s.get(Upload, m.upload_id)
+        assert locked_up is not None
+        readiness.lock_entity(s, locked_up.entity_id)
         if m.state != "confirmed":
             raise DomainError(409, "mapping_not_confirmed")
         if body.decision == "approve":
@@ -679,7 +699,7 @@ def decide_mapping(
 
 
 class ValueMapIn(BaseModel):
-    kind: Literal["unit", "emirate", "tax_treatment", "document_type", "buyer_class"]
+    kind: Literal["unit", "emirate", "tax_treatment", "document_type", "buyer_class", "country"]
     source_value: str = Field(min_length=1, max_length=200)
     target_code: str | None = Field(default=None, max_length=20)
 
@@ -716,7 +736,7 @@ def put_value_maps(
     entity_id: uuid.UUID, body: ValueMapsIn, a: ActorDep, eng: EngineDep
 ) -> dict[str, Any]:
     with tenancy.session(a.firm_id, eng) as s:
-        ent = entity_or_404(s, entity_id)
+        ent = readiness.lock_entity(s, entity_id)
         for it in body.items:
             row = s.execute(
                 select(ValueMapping).where(
@@ -741,7 +761,7 @@ def decide_value_maps(
 ) -> dict[str, Any]:
     a.require(DECIDERS)
     with tenancy.session(a.firm_id, eng) as s:
-        ent = entity_or_404(s, entity_id)
+        ent = readiness.lock_entity(s, entity_id)
         for it in body.items:
             row = s.execute(
                 select(ValueMapping).where(
@@ -796,7 +816,7 @@ def start_run(
     route = "POST /entities/{id}/runs"
     rhash = idempotency.request_hash(str(entity_id))
     with tenancy.session(a.firm_id, eng) as s:
-        ent = entity_or_404(s, entity_id)
+        ent = readiness.lock_entity(s, entity_id)
         prior = idempotency.lookup(s, a.firm_id, route, key, rhash)
         if prior is not None:
             return JSONResponse(status_code=202, content=prior)
@@ -929,6 +949,7 @@ def decide_exception(
     a.require(DECIDERS)
     with tenancy.session(a.firm_id, eng) as s:
         ex: FindingException = get_or_404(s, FindingException, exception_id, "finding_exception")
+        readiness.lock_entity(s, ex.entity_id)
         if ex.state != "proposed":
             raise DomainError(409, "exception_not_proposed")
         ex.state = "accepted" if body.decision == "accept" else "rejected"
@@ -958,6 +979,7 @@ def resolve_manual_review(body: ResolutionIn, a: ActorDep, eng: EngineDep) -> di
         entities: set[uuid.UUID] = set()
         for fid in body.finding_ids:
             f: FindingRow = get_or_404(s, FindingRow, fid, "finding")
+            readiness.lock_entity(s, f.entity_id)
             if f.outcome != "manual_review":
                 raise DomainError(409, "not_a_manual_review_finding", {"finding_id": str(fid)})
             f.review_resolution, f.resolved_by, f.resolved_at = (
@@ -1104,11 +1126,14 @@ def approve_report(
             raise DomainError(
                 503, "approvals_frozen", {"message": frozen.reason or "Approvals are paused"}
             )
+        # B1-009: shared versions lock (publication takes it exclusively), then the entity
+        # row lock that every pinned-version change takes; pins are compared after both.
+        readiness.lock_versions_shared(s)
         r: Report = get_or_404(s, Report, report_id, "report")
+        ent = readiness.lock_entity(s, r.entity_id)
         s.refresh(r, with_for_update=True)
         if r.state != "draft":
             raise DomainError(409, "report_not_draft")
-        ent = entity_or_404(s, r.entity_id)
         cal = readiness.current_calendar(s)
         current = readiness.current_pins(s, ent, day, cal)
         if body.pins != r.pins or r.pins != current:

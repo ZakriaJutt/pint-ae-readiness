@@ -27,6 +27,7 @@ def parse_upload(s: Session, c: jobs.Claimed, store: ObjectStore, limits: Limits
         raise readiness.DomainError(404, "upload_missing")
     if upload.state != "received":
         return  # already terminal: a duplicate delivery changes nothing
+    readiness.lock_entity(s, upload.entity_id)
     data = store.get(upload.storage_key)
     if hashlib.sha256(data).digest() != upload.sha256:
         raise readiness.DomainError(500, "stored_object_hash_mismatch")

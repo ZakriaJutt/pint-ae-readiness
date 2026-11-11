@@ -20,7 +20,20 @@ class Segment(StrEnum):
 
 
 ENTITY_TYPES = ("person", "government_entity")
-REVENUE_BANDS = ("ge_50m", "lt_50m", "unknown")
+# ge_50m means above AED 50,000,000; eq_50m exactly AED 50,000,000 (see below).
+REVENUE_BANDS = ("ge_50m", "eq_50m", "lt_50m", "unknown")
+
+# Exactly AED 50,000,000 is ambiguous in the sources: MoF Guidelines V2.0 (26 Oct 2026) §8.3
+# reads "Revenue >= AED 50,000,000", while the MoF announcement of MD 66 of 2026 says
+# revenues that "exceed AED 50 million". The product never picks: the entity is
+# segment-ambiguous (SEG-U), governed by the earlier SEG-L dates, and flagged
+# (Decision.md section 3, conflict recorded 2026-11-11).
+BOUNDARY_FLAG = "revenue_exactly_50m_sources_disagree"
+BOUNDARY_NOTE = (
+    "Revenue of exactly AED 50,000,000: MoF Guidelines V2.0 §8.3 says '>= AED 50,000,000' "
+    "(SEG-L); the MoF announcement of MD 66 of 2026 says 'exceed AED 50 million' (SEG-S). "
+    "The earlier SEG-L dates govern until the Reviewer has a ruling."
+)
 
 
 @dataclass(frozen=True)
@@ -47,4 +60,5 @@ def classify(facts: SegmentFacts) -> Segment:
         return Segment.L
     if facts.revenue_band == "lt_50m":
         return Segment.S
+    # unknown, or exactly AED 50M where the sources disagree: never a guessed band.
     return Segment.U
