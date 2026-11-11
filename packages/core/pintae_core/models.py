@@ -40,7 +40,7 @@ NAMING = {
 
 
 # The migration head this code expects; /readyz compares it with alembic_version.
-SCHEMA_REVISION = "0004"
+SCHEMA_REVISION = "0004b"
 
 
 class Base(DeclarativeBase):
@@ -136,9 +136,16 @@ class CalendarVersion(Base):
     published_at: Mapped[datetime | None]
     # The calendar file as published; loaders verify it against content_hash (B1-012).
     content: Mapped[dict[str, Any] | None]
+    # B1-014: publication, derived_from_rows (backfilled once by migration 0004b) or
+    # legacy_unverified (no content; never newly pinned; pinned results read Stale).
+    content_origin: Mapped[str | None]
     __table_args__ = (
         CheckConstraint(_in("effective_label", ("stated", "assumed")), name="effective_label"),
         CheckConstraint(_in("status", ("draft", "published", "withdrawn")), name="status"),
+        CheckConstraint(
+            _in("content_origin", ("publication", "derived_from_rows", "legacy_unverified")),
+            name="content_origin",
+        ),
     )
 
 

@@ -191,6 +191,7 @@ def publish_calendar(
             content_hash=digest,
             published_at=now,
             content=dict(data),
+            content_origin="publication",
         )
         s.add(row)
         s.flush()

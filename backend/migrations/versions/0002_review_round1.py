@@ -32,7 +32,9 @@ def upgrade() -> None:
         sa.Column("empty_datasets", sa.Integer(), server_default=sa.text("0"), nullable=False),
     )
     op.drop_constraint(
-        op.f("ck_readiness_snapshots_data_ready_requires_clean"), "readiness_snapshots", type_="check"
+        op.f("ck_readiness_snapshots_data_ready_requires_clean"),
+        "readiness_snapshots",
+        type_="check",
     )
     op.create_check_constraint(
         op.f("ck_readiness_snapshots_data_ready_requires_clean"), "readiness_snapshots", NEW_CLEAN
@@ -43,7 +45,9 @@ def upgrade() -> None:
         "value_mappings",
         "kind IN ('unit', 'emirate', 'tax_treatment', 'document_type', 'buyer_class', 'country')",
     )
-    op.drop_constraint(op.f("ck_segment_assessments_revenue_band"), "segment_assessments", type_="check")
+    op.drop_constraint(
+        op.f("ck_segment_assessments_revenue_band"), "segment_assessments", type_="check"
+    )
     op.create_check_constraint(
         op.f("ck_segment_assessments_revenue_band"),
         "segment_assessments",
@@ -55,7 +59,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute("GRANT SELECT ON vendor_users TO pintae_app")
-    op.drop_constraint(op.f("ck_segment_assessments_revenue_band"), "segment_assessments", type_="check")
+    op.drop_constraint(
+        op.f("ck_segment_assessments_revenue_band"), "segment_assessments", type_="check"
+    )
     op.create_check_constraint(
         op.f("ck_segment_assessments_revenue_band"),
         "segment_assessments",
@@ -68,7 +74,9 @@ def downgrade() -> None:
         "kind IN ('unit', 'emirate', 'tax_treatment', 'document_type', 'buyer_class')",
     )
     op.drop_constraint(
-        op.f("ck_readiness_snapshots_data_ready_requires_clean"), "readiness_snapshots", type_="check"
+        op.f("ck_readiness_snapshots_data_ready_requires_clean"),
+        "readiness_snapshots",
+        type_="check",
     )
     op.create_check_constraint(
         op.f("ck_readiness_snapshots_data_ready_requires_clean"), "readiness_snapshots", OLD_CLEAN
